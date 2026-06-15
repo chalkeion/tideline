@@ -1,0 +1,24 @@
+{
+  "name": "@tideline/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tsconfig/base.json": "./tsconfig/base.json",
+    "./tsconfig/library.json": "./tsconfig/library.json",
+    "./tsconfig/nextjs.json": "./tsconfig/nextjs.json",
+    "./eslint/base.js": "./eslint/base.js",
+    "./vitest/base.ts": "./vitest/base.ts"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.17.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "typescript-eslint": "^8.18.0",
+    "vitest": "^2.1.8"
+  },
+  "peerDependencies": {
+    "eslint": "^9",
+    "typescript": "^5.6"
+  }
+}
