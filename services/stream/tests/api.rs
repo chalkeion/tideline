@@ -196,6 +196,7 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         port: 0,
         ingest_enabled: false,
         track_all_tokens: true,
+        retention_days: None,
         backfill_blocks: 0,
         confirmations: 0,
         max_chunk_blocks: 1,
@@ -426,6 +427,21 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _, _) = call(&app, get("/v1/addresses/0x1234", None)).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Retention deletes only what is past the window.
+    let mut tx = pool.begin().await.unwrap();
+    let old = flow("0xee", "transfer", STRANGER, SIGNER, Some(1_000_000));
+    db::insert_flows(&mut tx, &[(old, now - 10 * 86_400)], 0)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(db::prune_flows(&pool, 7).await.unwrap(), 1);
+    assert_eq!(db::prune_flows(&pool, 7).await.unwrap(), 0);
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM flows")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(left, 4);
 
     pool.close().await;
     let mut admin = PgConnection::connect(&server_url).await.unwrap();

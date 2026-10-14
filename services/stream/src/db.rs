@@ -19,8 +19,16 @@ const LINK_CONFIDENCE_FACTOR: f32 = 0.75;
 pub async fn connect(database_url: &str) -> anyhow::Result<PgPool> {
     let pool = PgPoolOptions::new()
         .max_connections(10)
+        .acquire_timeout(std::time::Duration::from_secs(10))
         .connect(database_url)
-        .await?;
+        .await
+        .map_err(|e| {
+            // sqlx says "pool timed out" when nothing is listening; name the likely cause.
+            let target = database_url
+                .rsplit_once('@')
+                .map_or("DATABASE_URL", |(_, host)| host);
+            anyhow::anyhow!("cannot reach Postgres at {target} ({e}): is the database running?")
+        })?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     Ok(pool)
 }
@@ -324,6 +332,31 @@ pub async fn load_cursor(pool: &PgPool) -> sqlx::Result<Option<i64>> {
         .fetch_optional(pool)
         .await
         .map(|r| r.map(|r| r.get(0)))
+}
+
+/// Rows deleted per statement, so pruning never holds a long lock on `flows`.
+const PRUNE_BATCH: i64 = 20_000;
+
+/// Delete flows settled more than `days` ago. Disclosures go with their flows; the
+/// attribution registry and clustering links are kept. Returns the rows deleted.
+pub async fn prune_flows(pool: &PgPool, days: u32) -> sqlx::Result<u64> {
+    let mut deleted = 0;
+    loop {
+        let n = sqlx::query(
+            "DELETE FROM flows WHERE id IN (
+                 SELECT id FROM flows WHERE block_time < now() - make_interval(days => $1)
+                 LIMIT $2)",
+        )
+        .bind(days as i32)
+        .bind(PRUNE_BATCH)
+        .execute(pool)
+        .await?
+        .rows_affected();
+        deleted += n;
+        if n < PRUNE_BATCH as u64 {
+            return Ok(deleted);
+        }
+    }
 }
 
 pub async fn save_cursor(

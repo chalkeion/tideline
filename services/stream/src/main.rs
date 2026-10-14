@@ -65,6 +65,21 @@ async fn serve(cfg: Arc<Config>, pool: sqlx::PgPool) -> anyhow::Result<()> {
         tracing::info!("LIVE_RATES=false: using the configured reference rates");
     }
 
+    if let Some(days) = cfg.retention_days {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            let mut every = tokio::time::interval(std::time::Duration::from_secs(60 * 60));
+            loop {
+                every.tick().await;
+                match db::prune_flows(&pool, days).await {
+                    Ok(0) => {}
+                    Ok(n) => tracing::info!(deleted = n, days, "pruned flows past retention"),
+                    Err(e) => tracing::warn!("pruning flows failed: {e}"),
+                }
+            }
+        });
+    }
+
     if cfg.ingest_enabled {
         let rpc = RpcClient::new(&cfg.rpc_urls)?;
         rpc.check_chain(cfg.network).await?;

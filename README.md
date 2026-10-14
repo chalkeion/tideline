@@ -136,21 +136,53 @@ curl -X POST localhost:8080/v1/attestations -H "Authorization: Bearer $TIDELINE_
 ## Deploy
 
 Three parts: Postgres, the stream service (one process: ingestor and API), and the web app.
+The service needs a host that keeps it running (it is an ingestor, not a request handler);
+the web app runs anywhere Next.js does. One working setup is Railway for Postgres and the
+service, and Vercel for the web app, both deploying from this repository.
 
-- **Service.** `services/stream/Dockerfile` builds a self-contained image; migrations and
-  the seed registry are compiled in.
+**1. Postgres and the stream service (Railway).**
 
-  ```bash
-  docker build -t tideline-stream services/stream
-  docker run -p 8080:8080 -e DATABASE_URL=... -e TIDELINE_ADMIN_KEY=... tideline-stream
-  ```
+1. New project, then add a PostgreSQL database.
+2. Add a service from this GitHub repo. Set its root directory to `services/stream`; it
+   builds from the Dockerfile, with the health check from `services/stream/railway.json`.
+   Migrations and the seed registry are compiled in.
+3. Variables on the service:
 
-  Set `ARC_NETWORK`, `BACKFILL_BLOCKS=172800` for a full day of history on first start, and
-  a keyed endpoint first in `ARC_RPC_URL` for anything long-running. Run a single instance
-  per network: ingest progress and rate limits are held in memory.
-- **Web.** Any Next.js host, with `apps/web` as the root directory. Set `TIDELINE_API_URL`
-  to the service and `TIDELINE_API_KEY` to a licensed key from `keys create`, not the
-  admin key.
+   | Variable | Value |
+   | --- | --- |
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+   | `TIDELINE_ADMIN_KEY` | a long random value (`openssl rand -hex 32`) |
+   | `ARC_NETWORK` | `mainnet` |
+   | `RETENTION_DAYS` | `3`: with every token tracked, Arc Mainnet adds about 1 GB of flows a day |
+   | `BACKFILL_BLOCKS` | `7200` (one hour; 172800 is a day) |
+   | `POLL_INTERVAL_MS` | `1000` |
+   | `ARC_RPC_URL` | optional: a keyed endpoint first, then the public ones |
+
+4. Generate a public domain for the service and check `https://<service>/health`.
+5. Mint a licensed key for the web app:
+
+   ```bash
+   curl -X POST https://<service>/v1/keys -H "Authorization: Bearer $TIDELINE_ADMIN_KEY" \
+     -H 'content-type: application/json' -d '{"name":"web","tier":"licensed"}'
+   ```
+
+Run a single instance per network: ingest progress and rate limits are held in memory.
+Without Railway, any container host works:
+
+```bash
+docker build -t tideline-stream services/stream
+docker run -p 8080:8080 -e DATABASE_URL=... -e TIDELINE_ADMIN_KEY=... tideline-stream
+```
+
+**2. Web app (Vercel).** Import the repo, set the root directory to `apps/web` (the
+framework and the pnpm workspace are detected), and set:
+
+| Variable | Value |
+| --- | --- |
+| `TIDELINE_API_URL` | `https://<service>` |
+| `TIDELINE_API_KEY` | the licensed key from step 1.5, not the admin key |
+
+The key stays on the server: the browser only ever talks to the Next.js app.
 
 ## Verification
 
