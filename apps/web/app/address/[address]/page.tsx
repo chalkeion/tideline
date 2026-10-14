@@ -26,6 +26,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
   return (
     <>
       <PageHeader
+        eyebrow="Address"
         title={best ? best.entity.name : "Unattributed address"}
         lede={<span className="break-all font-mono text-xs">{profile.address}</span>}
       />

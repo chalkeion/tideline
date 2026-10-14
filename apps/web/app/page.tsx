@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FlowTable } from "@/components/flow-table";
 import { LiveFeed } from "@/components/live-feed";
-import { AssetName, Empty, PageHeader, ScopeNote, Section, Stat, Table, WindowTabs } from "@/components/ui";
+import { ArrowLink, AssetName, Empty, Eyebrow, PageHeader, ScopeNote, Section, Stat, Table, WindowTabs } from "@/components/ui";
 import { VolumeChart } from "@/components/volume-chart";
 import { api, getNetwork, parseWindow } from "@/lib/api";
 import { categoryLabel, count, ms, pct, rateLabel, usd, windowLabel } from "@/lib/format";
@@ -27,7 +27,8 @@ export default async function OverviewPage({
   return (
     <>
       <PageHeader
-        title="Stablecoin flow on Arc, attributed"
+        eyebrow="Flow intelligence"
+        title="Every flow on Arc, attributed to who moved it"
         lede="Every token movement on Arc, decoded into the economic flow it represents and matched to the entity behind it. Listed assets are valued in USD; every other token is tracked by amount."
       >
         <WindowTabs basePath="/" current={hours} />
@@ -35,31 +36,47 @@ export default async function OverviewPage({
 
       <ScopeNote scope={scope} hours={hours} />
 
-      <section className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
-        <div className="rounded-sm border border-line-strong bg-surface p-6">
-          <p className="text-xs text-ink-2">Headline claim, measured over the last {label}</p>
-          {coverage.claim_volume_pct === null ? (
-            <p className="mt-3 max-w-[52ch] text-lg leading-snug">
-              No live flows measured yet. The claim is computed only from blocks produced while
-              the ingestor is following the chain head.
-            </p>
-          ) : (
-            <p className="mt-3 max-w-[52ch] text-lg leading-snug">
-              <span className="font-mono text-4xl font-semibold tracking-tight">
-                {pct(coverage.claim_volume_pct)}
-              </span>{" "}
-              of live volume is attributed to a known entity within{" "}
-              {coverage.claim_within_seconds} seconds of settlement.
-            </p>
-          )}
-          <Link
-            href={`/coverage?window=${hours}`}
-            className="mt-4 inline-block text-sm text-accent-ink underline underline-offset-2"
-          >
-            See how this is measured
-          </Link>
+      <section className="grid gap-6 lg:grid-cols-12">
+        <div className="bezel lg:col-span-7">
+          <div className="bezel-core relative flex flex-col overflow-hidden p-7 md:p-9">
+            {/* The tide line: decorative, behind the claim. */}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 800 160"
+              preserveAspectRatio="none"
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-32 w-full text-accent"
+              fill="none"
+            >
+              <path d="M0 96C80 96 120 56 200 56s120 40 200 40 120-40 200-40 120 40 200 40" stroke="currentColor" strokeOpacity="0.35" strokeWidth="1.5" />
+              <path d="M0 120c80 0 120-30 200-30s120 30 200 30 120-30 200-30 120 30 200 30" stroke="currentColor" strokeOpacity="0.16" strokeWidth="1.5" />
+              <path d="M0 142h800" stroke="currentColor" strokeOpacity="0.12" strokeWidth="1" />
+            </svg>
+            <Eyebrow>
+              <span className="live-dot" aria-hidden="true" />
+              Headline claim, last {label}
+            </Eyebrow>
+            {coverage.claim_volume_pct === null ? (
+              <p className="relative mt-6 max-w-[48ch] text-lg leading-snug text-ink-2">
+                No live flows measured yet. The claim is computed only from blocks produced while
+                the ingestor is following the chain head.
+              </p>
+            ) : (
+              <>
+                <p className="relative mt-6 text-[3.75rem] font-semibold leading-none tracking-[-0.05em] tabular-nums md:text-[5rem]">
+                  {pct(coverage.claim_volume_pct)}
+                </p>
+                <p className="relative mt-4 max-w-[40ch] text-lg leading-snug text-ink-2 text-pretty">
+                  of live volume is attributed to a known entity within{" "}
+                  <span className="text-ink">{coverage.claim_within_seconds} seconds</span> of settlement.
+                </p>
+              </>
+            )}
+            <div className="relative mt-8 pb-10">
+              <ArrowLink href={`/coverage?window=${hours}`}>See how this is measured</ArrowLink>
+            </div>
+          </div>
         </div>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-5">
+        <dl className="grid grid-cols-2 grid-rows-2 gap-5 p-1.5 lg:col-span-5">
           <Stat label="Median latency" value={ms(coverage.latency_p50_ms)} sub="settlement to queryable" />
           <Stat label="p95 latency" value={ms(coverage.latency_p95_ms)} sub={`${count(coverage.live_flows)} live flows`} />
           <Stat
@@ -76,12 +93,12 @@ export default async function OverviewPage({
       </section>
 
       {ingest.last_error ? (
-        <p role="alert" className="rounded-sm border border-line-strong px-4 py-3 text-sm text-ink-2">
+        <p role="alert" className="rounded-2xl border border-line-strong bg-shell px-5 py-3.5 text-sm text-ink-2">
           The ingestor reported an error and is retrying: <span className="font-mono text-xs">{ingest.last_error}</span>
         </p>
       ) : null}
 
-      <dl className="grid grid-cols-2 gap-6 md:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-5 p-1.5 md:grid-cols-4">
         <Stat label={`Volume, ${label}`} value={usd(overview.volume_usd)} sub="notional USD" />
         <Stat label="Flows" value={count(overview.flows)} />
         <Stat label="Active addresses" value={count(overview.active_addresses)} />

@@ -28,6 +28,7 @@ export default function LicensePage() {
   return (
     <>
       <PageHeader
+        eyebrow="Data license"
         title="Data license"
         lede="Tideline is sold as data, not as a token. Compliance and risk teams license the attribution and enrichment layer through this API."
       />

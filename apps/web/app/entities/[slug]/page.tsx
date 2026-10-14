@@ -28,6 +28,7 @@ export default async function EntityPage({
   return (
     <>
       <PageHeader
+        eyebrow="Entity"
         title={entity.name}
         lede={
           <>

@@ -22,6 +22,7 @@ export default async function EntitiesPage({
   return (
     <>
       <PageHeader
+        eyebrow="Attribution registry"
         title="Entities"
         lede="The attribution registry: who is behind the addresses moving value on Arc, and the evidence for each claim."
       />

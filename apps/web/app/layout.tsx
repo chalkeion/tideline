@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 import { Nav } from "@/components/nav";
 import { getNetwork } from "@/lib/api";
 import "./globals.css";
@@ -18,20 +19,26 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const network = await getNetwork().catch(() => null);
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-      <body className="min-h-[100dvh] font-sans">
+      <body className="min-h-[100dvh] overflow-x-clip font-sans">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-30 focus:rounded-sm focus:bg-ink focus:px-3 focus:py-1.5 focus:text-sm focus:text-page"
         >
           Skip to content
         </a>
-        <header className="sticky top-0 z-20 border-b border-line bg-page">
-          <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 md:h-14 md:flex-nowrap md:px-8 md:py-0">
-            <Link href="/" className="flex items-baseline gap-2 text-base font-semibold tracking-tight">
-              Tideline
+        {/* A floating glass island: the only blurred layer, and it is sticky. */}
+        <header className="sticky top-3 z-20 px-3 md:px-6">
+          <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-5 gap-y-2 rounded-[1.75rem] border border-line-strong bg-page/70 px-3 py-2 shadow-[0_20px_50px_-30px_var(--shadow)] backdrop-blur-xl md:flex-nowrap md:rounded-full md:pl-4">
+            <Link
+              href="/"
+              aria-label="Tideline home"
+              className="flex items-center gap-3 rounded-full transition-opacity duration-500 ease-tide hover:opacity-80"
+            >
+              <Logo />
               {/* Every figure comes from one network; say which next to the name. */}
               {network ? (
-                <span className="rounded-sm border border-line-strong px-1.5 py-0.5 text-[11px] font-normal leading-none tracking-normal text-ink-2">
+                <span className="hidden items-center gap-1.5 rounded-full border border-line-strong px-2.5 py-1 text-[11px] leading-none text-ink-2 sm:inline-flex">
+                  <span className="live-dot" aria-hidden="true" />
                   {network.name}
                 </span>
               ) : null}
@@ -46,15 +53,26 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
                 name="q"
                 type="search"
                 required
-                placeholder="Address or entity"
-                className="h-8 w-full rounded-sm border border-line-strong bg-surface px-2.5 font-mono text-xs placeholder:text-ink-3 md:w-64"
+                placeholder="Search address, entity or token"
+                className="h-9 w-full rounded-full border border-line-strong bg-surface/60 px-4 font-mono text-xs transition-[border-color,box-shadow] duration-500 ease-tide placeholder:text-ink-3 focus:border-accent focus:shadow-[0_0_0_4px_var(--accent-wash)] focus:outline-none md:w-72"
               />
             </form>
           </div>
         </header>
-        <main id="main" className="mx-auto flex max-w-[1400px] flex-col gap-10 px-4 py-8 md:px-8">
+        <main id="main" className="stagger mx-auto flex max-w-[1400px] flex-col gap-12 px-4 pb-16 pt-12 md:px-8 md:pt-16">
           {children}
         </main>
+        <footer className="mx-auto max-w-[1400px] px-4 pb-10 md:px-8">
+          <div className="flex flex-col gap-3 border-t border-line pt-6 text-xs text-ink-3 md:flex-row md:items-center md:justify-between">
+            <span className="flex items-center gap-2.5 text-ink-2">
+              <Logo />
+            </span>
+            <p>
+              Attributed flow intelligence for Arc{network ? `, reading ${network.name} (chain ${network.chain_id})` : ""}.
+              Every attribution carries its evidence.
+            </p>
+          </div>
+        </footer>
       </body>
     </html>
   );

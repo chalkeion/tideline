@@ -30,6 +30,7 @@ export default async function CoveragePage({
   return (
     <>
       <PageHeader
+        eyebrow="Methodology"
         title="Attribution coverage"
         lede="One checkable number: how much Arc stablecoin flow Tideline ties to a known entity, and how soon after settlement. Recomputed from stored flows on every load."
       >

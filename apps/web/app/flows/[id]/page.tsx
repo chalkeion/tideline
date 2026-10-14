@@ -86,7 +86,7 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
 
   return (
     <>
-      <PageHeader title={flow.narrative}>
+      <PageHeader eyebrow={`Flow ${flow.id}`} title={flow.narrative}>
         <AttributionTag attribution={flow.attribution} />
       </PageHeader>
 

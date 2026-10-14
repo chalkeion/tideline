@@ -81,6 +81,7 @@ export default async function AssetPage({
   return (
     <>
       <PageHeader
+        eyebrow="Asset"
         title={symbol}
         lede={
           asset.listed

@@ -29,6 +29,7 @@ export default async function AssetsPage({
   return (
     <>
       <PageHeader
+        eyebrow="Token registry"
         title="Assets"
         lede="Every token that moves on Arc, identified by its contract address. Listed tokens are the ones whose address Arc or the issuer publishes, and only they are valued in USD. Any other token can take any name, so one named like a listed token is flagged."
       >

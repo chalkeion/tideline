@@ -63,6 +63,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader
+        eyebrow="Ledger"
         title="Flows"
         lede="One row per economic flow. A bridge or a Gateway deposit is a single flow from its real originator, not the token transfers it was made of."
       />
@@ -132,7 +133,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
         </Field>
         <button
           type="submit"
-          className="h-9 rounded-sm bg-ink px-4 text-sm font-medium text-page active:translate-y-px"
+          className="h-9 rounded-full bg-ink px-5 text-sm font-medium text-page transition-transform duration-500 ease-tide active:scale-[0.97]"
         >
           Apply filters
         </button>
@@ -151,7 +152,11 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
         </Empty>
       ) : (
         <>
-          <FlowTable flows={page.flows} />
+          <div className="bezel">
+            <div className="bezel-core p-5 md:p-6">
+              <FlowTable flows={page.flows} />
+            </div>
+          </div>
           {page.next_cursor ? (
             <Link
               href={`/flows?${older}`}
