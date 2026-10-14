@@ -196,7 +196,7 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         port: 0,
         ingest_enabled: false,
         track_all_tokens: true,
-        retention_days: None,
+        retention_hours: None,
         backfill_blocks: 0,
         confirmations: 0,
         max_chunk_blocks: 1,
@@ -435,8 +435,8 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         .await
         .unwrap();
     tx.commit().await.unwrap();
-    assert_eq!(db::prune_flows(&pool, 7).await.unwrap(), 1);
-    assert_eq!(db::prune_flows(&pool, 7).await.unwrap(), 0);
+    assert_eq!(db::prune_flows(&pool, 7 * 24).await.unwrap(), 1);
+    assert_eq!(db::prune_flows(&pool, 7 * 24).await.unwrap(), 0);
     let left: i64 = sqlx::query_scalar("SELECT count(*) FROM flows")
         .fetch_one(&pool)
         .await

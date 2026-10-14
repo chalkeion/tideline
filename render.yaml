@@ -1,0 +1,47 @@
+# Render Blueprint: Postgres and the stream service (ingestor + API). The web app deploys
+# separately (Vercel, root directory apps/web); see README > Deploy.
+#
+# Free plan caveats (render.com/docs/free):
+# - A free web service sleeps after 15 minutes without inbound traffic, and the ingestor
+#   sleeps with it. Ping /health every 10 minutes from an uptime monitor to keep it awake;
+#   the free 750 instance hours cover one service around the clock.
+# - Free Postgres is 1 GB and expires 30 days after creation. RETENTION_HOURS=12 keeps
+#   Arc Mainnet with every token tracked at about 0.5 GB.
+services:
+  - type: web
+    name: tideline-stream
+    runtime: docker
+    plan: free
+    # Paths are relative to the repository root.
+    dockerfilePath: ./services/stream/Dockerfile
+    dockerContext: ./services/stream
+    healthCheckPath: /health
+    buildFilter:
+      paths:
+        - services/stream/**
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tideline-db
+          property: connectionString
+      - key: TIDELINE_ADMIN_KEY
+        generateValue: true
+      - key: ARC_NETWORK
+        value: mainnet
+      - key: TRACK_ALL_TOKENS
+        value: "true"
+      - key: RETENTION_HOURS
+        value: "12"
+      - key: BACKFILL_BLOCKS
+        value: "7200"
+      - key: POLL_INTERVAL_MS
+        value: "1000"
+      # Optional: a keyed endpoint first, then public ones. Empty uses the public endpoints.
+      - key: ARC_RPC_URL
+        sync: false
+
+databases:
+  - name: tideline-db
+    plan: free
+    databaseName: tideline
+    user: tideline

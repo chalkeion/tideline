@@ -337,17 +337,17 @@ pub async fn load_cursor(pool: &PgPool) -> sqlx::Result<Option<i64>> {
 /// Rows deleted per statement, so pruning never holds a long lock on `flows`.
 const PRUNE_BATCH: i64 = 20_000;
 
-/// Delete flows settled more than `days` ago. Disclosures go with their flows; the
+/// Delete flows settled more than `hours` ago. Disclosures go with their flows; the
 /// attribution registry and clustering links are kept. Returns the rows deleted.
-pub async fn prune_flows(pool: &PgPool, days: u32) -> sqlx::Result<u64> {
+pub async fn prune_flows(pool: &PgPool, hours: u32) -> sqlx::Result<u64> {
     let mut deleted = 0;
     loop {
         let n = sqlx::query(
             "DELETE FROM flows WHERE id IN (
-                 SELECT id FROM flows WHERE block_time < now() - make_interval(days => $1)
+                 SELECT id FROM flows WHERE block_time < now() - make_interval(hours => $1)
                  LIMIT $2)",
         )
-        .bind(days as i32)
+        .bind(hours as i32)
         .bind(PRUNE_BATCH)
         .execute(pool)
         .await?

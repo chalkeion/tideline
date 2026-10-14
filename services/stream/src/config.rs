@@ -229,9 +229,9 @@ pub struct Config {
     pub ingest_enabled: bool,
     /// Ingest transfers of every token on the network. Off: listed tokens only.
     pub track_all_tokens: bool,
-    /// Delete flows older than this many days, hourly. `None`: keep everything. With every
-    /// token tracked, Arc Mainnet adds about 1 GB of flows a day.
-    pub retention_days: Option<u32>,
+    /// Delete flows older than this many hours, checked hourly. `None`: keep everything.
+    /// With every token tracked, Arc Mainnet adds about 1 GB of flows a day.
+    pub retention_hours: Option<u32>,
     /// Blocks to backfill behind the head on first start (no stored cursor).
     pub backfill_blocks: u64,
     /// Blocks to stay behind the head. Arc has deterministic finality, so 0 is safe.
@@ -306,7 +306,10 @@ impl Config {
             port: env_parse("PORT", 8080),
             ingest_enabled: env_parse("INGEST_ENABLED", true),
             track_all_tokens: env_parse("TRACK_ALL_TOKENS", true),
-            retention_days: Some(env_parse("RETENTION_DAYS", 0)).filter(|d| *d > 0),
+            // RETENTION_HOURS wins; RETENTION_DAYS is the coarse form.
+            retention_hours: Some(env_parse("RETENTION_HOURS", 0))
+                .filter(|h| *h > 0)
+                .or_else(|| Some(env_parse("RETENTION_DAYS", 0u32) * 24).filter(|h| *h > 0)),
             backfill_blocks: env_parse("BACKFILL_BLOCKS", 600),
             confirmations: env_parse("CONFIRMATIONS", 0),
             max_chunk_blocks: env_parse("MAX_CHUNK_BLOCKS", 100).max(1),

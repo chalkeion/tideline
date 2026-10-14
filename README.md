@@ -137,10 +137,25 @@ curl -X POST localhost:8080/v1/attestations -H "Authorization: Bearer $TIDELINE_
 
 Three parts: Postgres, the stream service (one process: ingestor and API), and the web app.
 The service needs a host that keeps it running (it is an ingestor, not a request handler);
-the web app runs anywhere Next.js does. One working setup is Railway for Postgres and the
-service, and Vercel for the web app, both deploying from this repository.
+the web app runs anywhere Next.js does. Postgres and the service go on Render (free, with
+the caveats below) or Railway; the web app goes on Vercel. All of them deploy from this
+repository.
 
-**1. Postgres and the stream service (Railway).**
+**1a. Postgres and the stream service on Render (free).** New > Blueprint, pick this repo:
+`render.yaml` creates the database and the service, generates `TIDELINE_ADMIN_KEY`, and
+sets mainnet defaults. Two free-plan limits matter here:
+
+- A free web service sleeps after 15 minutes without inbound traffic, and the ingestor
+  sleeps with it. Point a free uptime monitor (UptimeRobot, cron-job.org) at
+  `https://<service>.onrender.com/health` every 10 minutes; the free 750 instance hours
+  cover one service around the clock.
+- Free Postgres is 1 GB and expires 30 days after creation. `RETENTION_HOURS=12` keeps it
+  at about 0.5 GB; upgrade the database before day 30 to keep it.
+
+Then mint the web app's key as in step 1b.5, with the generated admin key from the
+service's Environment tab.
+
+**1b. Postgres and the stream service on Railway (about $5 a month).**
 
 1. New project, then add a PostgreSQL database.
 2. Add a service from this GitHub repo. Set its root directory to `services/stream`; it
@@ -153,7 +168,7 @@ service, and Vercel for the web app, both deploying from this repository.
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
    | `TIDELINE_ADMIN_KEY` | a long random value (`openssl rand -hex 32`) |
    | `ARC_NETWORK` | `mainnet` |
-   | `RETENTION_DAYS` | `3`: with every token tracked, Arc Mainnet adds about 1 GB of flows a day |
+   | `RETENTION_HOURS` | `72`: with every token tracked, Arc Mainnet adds about 1 GB of flows a day |
    | `BACKFILL_BLOCKS` | `7200` (one hour; 172800 is a day) |
    | `POLL_INTERVAL_MS` | `1000` |
    | `ARC_RPC_URL` | optional: a keyed endpoint first, then the public ones |
@@ -180,7 +195,7 @@ framework and the pnpm workspace are detected), and set:
 | Variable | Value |
 | --- | --- |
 | `TIDELINE_API_URL` | `https://<service>` |
-| `TIDELINE_API_KEY` | the licensed key from step 1.5, not the admin key |
+| `TIDELINE_API_KEY` | the licensed key from step 1b.5, not the admin key |
 
 The key stays on the server: the browser only ever talks to the Next.js app.
 
