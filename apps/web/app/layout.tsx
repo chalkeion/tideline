@@ -9,9 +9,21 @@ import "./globals.css";
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
+/** Absolute base for link previews: SITE_URL, else Vercel's production domain. */
+const siteUrl =
+  process.env.SITE_URL ??
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : "http://localhost:3000");
+
+const description = "Every flow on Arc, attributed to who moved it, with the evidence.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: { default: "Tideline", template: "%s | Tideline" },
-  description: "Attributed flow intelligence for every asset on Arc.",
+  description,
+  openGraph: { type: "website", siteName: "Tideline", title: "Tideline", description },
+  twitter: { card: "summary_large_image", title: "Tideline", description },
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
