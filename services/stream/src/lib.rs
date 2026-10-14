@@ -8,3 +8,4 @@ pub mod ingest;
 pub mod rates;
 pub mod rpc;
 pub mod schema;
+pub mod tokens;

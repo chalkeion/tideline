@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { Flow } from "@tideline/sdk";
-import { kindLabel, usd, utcTime } from "@/lib/format";
+import { kindLabel, tokenAmount, tokenId, usd, utcTime } from "@/lib/format";
 
 const POLL_MS = 4000;
 const MAX_ROWS = 14;
@@ -68,8 +68,17 @@ export function LiveFeed({ initial }: { initial: Flow[] }) {
               <span className="text-ink-2">{flow.narrative.split(": ")[1] ?? ""}</span>
             </Link>
             <span className="font-mono text-sm">
-              {flow.visibility === "shielded" ? "Shielded" : usd(flow.usd_value)}{" "}
-              <span className="text-xs text-ink-3">{flow.asset}</span>
+              {flow.visibility === "shielded"
+                ? "Shielded"
+                : flow.token_id !== null
+                  ? `#${tokenId(flow.token_id)}`
+                  : flow.usd_value === null
+                    ? tokenAmount(flow.amount)
+                    : usd(flow.usd_value)}{" "}
+              <span className="text-xs text-ink-3">
+                {flow.asset}
+                {flow.asset_listed ? "" : " (unlisted)"}
+              </span>
             </span>
           </li>
         ))}

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Flow } from "@tideline/sdk";
-import { kindLabel, usd, utc } from "@/lib/format";
-import { AttributionTag, PartyCell, Table } from "./ui";
+import { kindLabel, tokenAmount, tokenId, usd, utc } from "@/lib/format";
+import { AssetName, AttributionTag, PartyCell, Table } from "./ui";
 
 export function FlowAmount({ flow }: { flow: Flow }) {
   if (flow.visibility === "shielded") {
@@ -11,11 +11,32 @@ export function FlowAmount({ flow }: { flow: Flow }) {
       </span>
     );
   }
+  const asset = <AssetName symbol={flow.asset} address={flow.asset_address} listed={flow.asset_listed} />;
+  if (flow.token_id !== null) {
+    return (
+      <span className="flex flex-col items-end gap-0.5">
+        <span className="font-mono" title={flow.token_id}>
+          #{tokenId(flow.token_id)}
+        </span>
+        <span className="text-xs text-ink-3">{asset}</span>
+      </span>
+    );
+  }
+  if (flow.usd_value === null) {
+    return (
+      <span className="flex flex-col items-end gap-0.5">
+        <span className="font-mono" title={flow.amount ?? undefined}>
+          {tokenAmount(flow.amount)} <span className="text-xs">{asset}</span>
+        </span>
+        <span className="text-xs text-ink-3">Unpriced</span>
+      </span>
+    );
+  }
   return (
     <span className="flex flex-col items-end gap-0.5">
       <span className="font-mono">{usd(flow.usd_value)}</span>
-      <span className="font-mono text-xs text-ink-3">
-        {flow.amount} {flow.asset}
+      <span className="font-mono text-xs text-ink-3" title={flow.amount ?? undefined}>
+        {tokenAmount(flow.amount)} {asset}
         {flow.visibility === "disclosed" ? " (disclosed)" : ""}
       </span>
     </span>

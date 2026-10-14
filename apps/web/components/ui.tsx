@@ -85,6 +85,31 @@ export function AttributionTag({ attribution }: { attribution: string }) {
   return <Tag tone={a.tone}>{a.label}</Tag>;
 }
 
+/**
+ * A token by symbol, linked to its asset page. An unlisted token is marked as such: its
+ * symbol is whatever its deployer chose, and may copy a listed token's.
+ */
+export function AssetName({
+  symbol,
+  address,
+  listed,
+}: {
+  symbol: string;
+  address: string;
+  listed: boolean;
+}) {
+  return (
+    <Link
+      href={`/assets/${address}`}
+      title={listed ? `${symbol} ${address}` : `Unlisted token ${address}`}
+      className="underline-offset-2 hover:text-accent-ink hover:underline"
+    >
+      {symbol}
+      {listed ? null : <span className="text-ink-3"> (unlisted)</span>}
+    </Link>
+  );
+}
+
 /** A flow counterparty: the entity when known, the address otherwise. */
 export function PartyCell({ party }: { party: Party }) {
   const isAddress = /^0x[0-9a-f]{40}$/.test(party.address);

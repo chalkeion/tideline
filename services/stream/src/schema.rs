@@ -67,11 +67,19 @@ api_type! {
         /// Settlement → attributed-and-queryable, in ms. Only for flows ingested live.
         #[ts(type = "number | null")]
         pub latency_ms: Option<i64>,
+        /// Display symbol. Symbols are not unique on chain; `asset_address` is.
         pub asset: String,
+        pub asset_address: String,
+        /// Arc or the issuer publishes this token's address. An unlisted token can carry
+        /// any symbol, including a listed token's.
+        pub asset_listed: bool,
+        /// ERC-721 token id. Null for fungible tokens.
+        pub token_id: Option<String>,
         pub kind: String,
         /// public | shielded | disclosed
         pub visibility: String,
-        /// Token units as a decimal string. Null while the amount is shielded.
+        /// Token units as a decimal string (raw units when the token's decimals are
+        /// unknown). Null while the amount is shielded.
         pub amount: Option<String>,
         pub usd_value: Option<f64>,
         /// micro | retail | commercial | institutional
@@ -101,11 +109,73 @@ api_type! {
 api_type! {
     pub struct AssetVolume {
         pub asset: String,
+        pub address: String,
+        pub listed: bool,
+        /// False: the token has no reference rate, and `volume_usd` is 0 by omission.
+        pub priced: bool,
         #[ts(type = "number")]
         pub flows: i64,
         pub volume_usd: f64,
         #[ts(type = "number")]
         pub shielded_flows: i64,
+    }
+}
+
+api_type! {
+    /// A token contract on the network and its activity in a window.
+    pub struct AssetSummary {
+        pub address: String,
+        pub symbol: Option<String>,
+        pub name: Option<String>,
+        /// erc20 | erc721
+        pub standard: String,
+        /// Null when the contract does not say: amounts are then raw units.
+        pub decimals: Option<i32>,
+        /// Arc or the issuer publishes this address. Only listed tokens are priced.
+        pub listed: bool,
+        /// Unlisted, yet named like a listed token: it is not the token it names.
+        pub symbol_conflict: bool,
+        pub issuer: Option<EntityRef>,
+        /// usd | eur | usyc | btc | eth. Null: unpriced.
+        pub price_source: Option<String>,
+        #[ts(type = "number | null")]
+        pub first_seen_block: Option<i64>,
+        #[ts(type = "number")]
+        pub flows: i64,
+        /// Token units moved in the window, as a decimal string.
+        pub amount: String,
+        /// Null for an unpriced token.
+        pub volume_usd: Option<f64>,
+        #[ts(type = "number")]
+        pub active_addresses: i64,
+    }
+}
+
+api_type! {
+    pub struct AssetList {
+        pub window_hours: i32,
+        pub assets: Vec<AssetSummary>,
+    }
+}
+
+api_type! {
+    /// An address that moved a token, with what it sent and received in the window.
+    pub struct AssetParty {
+        pub address: String,
+        pub entity: Option<EntityRef>,
+        #[ts(type = "number")]
+        pub flows: i64,
+        /// Token units as decimal strings.
+        pub sent: String,
+        pub received: String,
+    }
+}
+
+api_type! {
+    pub struct AssetProfile {
+        pub window_hours: i32,
+        pub asset: AssetSummary,
+        pub top_addresses: Vec<AssetParty>,
     }
 }
 
@@ -143,9 +213,11 @@ api_type! {
 }
 
 api_type! {
+    /// Priced assets only: an unpriced token has no USD volume to stack.
     pub struct TimeBucket {
         pub t: String,
         pub asset: String,
+        pub address: String,
         #[ts(type = "number")]
         pub flows: i64,
         pub volume_usd: f64,
@@ -253,6 +325,11 @@ api_type! {
         pub eurc_as_of: Option<String>,
         pub usyc_source: String,
         pub usyc_as_of: Option<String>,
+        /// cirBTC and WETH. Null until a spot source answers: those flows stay unpriced.
+        pub btc_usd: Option<f64>,
+        pub eth_usd: Option<f64>,
+        pub spot_source: String,
+        pub spot_as_of: Option<String>,
         pub note: String,
     }
 }
@@ -267,7 +344,10 @@ api_type! {
         pub volume_usd: f64,
         #[ts(type = "number")]
         pub active_addresses: i64,
+        /// The assets with the most volume; `asset_count` moved in the window in all.
         pub assets: Vec<AssetVolume>,
+        #[ts(type = "number")]
+        pub asset_count: i64,
         pub kinds: Vec<KindVolume>,
         pub corridors: Vec<Corridor>,
         pub top_entities: Vec<EntityActivity>,

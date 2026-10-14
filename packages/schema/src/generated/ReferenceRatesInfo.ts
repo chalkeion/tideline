@@ -8,4 +8,8 @@ eurc_source: string,
 /**
  * Publication date (YYYY-MM-DD). Null for a configured static rate.
  */
-eurc_as_of: string | null, usyc_source: string, usyc_as_of: string | null, note: string, };
+eurc_as_of: string | null, usyc_source: string, usyc_as_of: string | null, 
+/**
+ * cirBTC and WETH. Null until a spot source answers: those flows stay unpriced.
+ */
+btc_usd: number | null, eth_usd: number | null, spot_source: string, spot_as_of: string | null, note: string, };

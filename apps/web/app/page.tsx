@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { FlowTable } from "@/components/flow-table";
 import { LiveFeed } from "@/components/live-feed";
-import { Empty, PageHeader, ScopeNote, Section, Stat, Table, WindowTabs } from "@/components/ui";
+import { AssetName, Empty, PageHeader, ScopeNote, Section, Stat, Table, WindowTabs } from "@/components/ui";
 import { VolumeChart } from "@/components/volume-chart";
 import { api, getNetwork, parseWindow } from "@/lib/api";
 import { categoryLabel, count, ms, pct, rateLabel, usd, windowLabel } from "@/lib/format";
@@ -28,7 +28,7 @@ export default async function OverviewPage({
     <>
       <PageHeader
         title="Stablecoin flow on Arc, attributed"
-        lede="Every USDC, EURC and USYC movement, decoded into the economic flow it represents and matched to the entity behind it."
+        lede="Every token movement on Arc, decoded into the economic flow it represents and matched to the entity behind it. Listed assets are valued in USD; every other token is tracked by amount."
       >
         <WindowTabs basePath="/" current={hours} />
       </PageHeader>
@@ -95,11 +95,24 @@ export default async function OverviewPage({
       <div className="grid gap-10 lg:grid-cols-[1.6fr_1fr]">
         <Section
           title="Volume by asset"
-          note={`${overview.series_bucket_minutes} minute buckets. EURC at ${rateLabel(rates.eurc_usd, rates.eurc_source, rates.eurc_as_of)}, USYC at ${rateLabel(rates.usyc_usd, rates.usyc_source, rates.usyc_as_of)}.`}
+          note={`${overview.series_bucket_minutes} minute buckets, listed assets only. EURC at ${rateLabel(rates.eurc_usd, rates.eurc_source, rates.eurc_as_of)}, USYC at ${rateLabel(rates.usyc_usd, rates.usyc_source, rates.usyc_as_of)}. ${
+            rates.btc_usd !== null && rates.eth_usd !== null
+              ? `cirBTC and WETH at ${rates.spot_source} (${rates.spot_as_of}).`
+              : "cirBTC and WETH are unpriced until a spot price arrives."
+          }`}
         >
           <VolumeChart series={overview.series} bucketMinutes={overview.series_bucket_minutes} />
         </Section>
-        <Section title="Assets">
+        <Section
+          title="Assets"
+          note={
+            overview.asset_count > overview.assets.length ? (
+              <Link href={`/assets?window=${hours}`} className="text-accent-ink underline underline-offset-2">
+                All {count(overview.asset_count)} assets
+              </Link>
+            ) : undefined
+          }
+        >
           {overview.assets.length === 0 ? (
             <Empty title="No flows in this window" />
           ) : (
@@ -114,14 +127,14 @@ export default async function OverviewPage({
               }
             >
               {overview.assets.map((asset) => (
-                <tr key={asset.asset}>
-                  <td>
-                    <Link href={`/flows?asset=${asset.asset}`} className="font-medium hover:text-accent-ink hover:underline">
-                      {asset.asset}
-                    </Link>
+                <tr key={asset.address}>
+                  <td className="font-medium">
+                    <AssetName symbol={asset.asset} address={asset.address} listed={asset.listed} />
                   </td>
                   <td className="text-right font-mono">{count(asset.flows)}</td>
-                  <td className="text-right font-mono">{usd(asset.volume_usd)}</td>
+                  <td className="text-right font-mono">
+                    {asset.priced ? usd(asset.volume_usd) : <span className="text-ink-3">Unpriced</span>}
+                  </td>
                   {scope.shielding_live ? (
                     <td className="text-right font-mono">{count(asset.shielded_flows)}</td>
                   ) : null}

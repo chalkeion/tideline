@@ -1,0 +1,14 @@
+{
+  "tokens": [
+    { "network": "mainnet", "address": "0x3600000000000000000000000000000000000000", "symbol": "USDC", "name": "USDC", "decimals": 6, "issuer": "circle", "price": "usd" },
+    { "network": "mainnet", "address": "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1", "symbol": "EURC", "name": "EURC", "decimals": 6, "issuer": "circle", "price": "eur" },
+    { "network": "mainnet", "address": "0x8a5D989Bbb96929F689B0200f435f53dA42bF490", "symbol": "USYC", "name": "US Yield Coin", "decimals": 6, "issuer": "circle", "price": "usyc" },
+    { "network": "mainnet", "address": "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0", "symbol": "cirBTC", "name": "Circle Wrapped Bitcoin", "decimals": 8, "issuer": "circle", "price": "btc" },
+    { "network": "mainnet", "address": "0x128cC466B61f542da60c70e3aA11c10e19B84EDB", "symbol": "WETH", "name": "Wrapped Ether", "decimals": 18, "issuer": null, "price": "eth" },
+    { "network": "testnet", "address": "0x3600000000000000000000000000000000000000", "symbol": "USDC", "name": "USDC", "decimals": 6, "issuer": "circle", "price": "usd" },
+    { "network": "testnet", "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", "symbol": "EURC", "name": "EURC", "decimals": 6, "issuer": "circle", "price": "eur" },
+    { "network": "testnet", "address": "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", "symbol": "USYC", "name": "US Yield Coin", "decimals": 6, "issuer": "circle", "price": "usyc" },
+    { "network": "testnet", "address": "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF", "symbol": "cirBTC", "name": "Circle Wrapped Bitcoin", "decimals": 8, "issuer": "circle", "price": "btc" },
+    { "network": "testnet", "address": "0x2c4047028a72803939b6fb674D01bC059B5C4961", "symbol": "WETH", "name": "Wrapped Ether", "decimals": 18, "issuer": null, "price": "eth" }
+  ]
+}

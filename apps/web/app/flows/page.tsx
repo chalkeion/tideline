@@ -3,7 +3,7 @@ import type { FlowQuery } from "@tideline/sdk";
 import { FlowTable } from "@/components/flow-table";
 import { Empty, PageHeader } from "@/components/ui";
 import { api } from "@/lib/api";
-import { ASSETS, KINDS, kindLabel } from "@/lib/format";
+import { KINDS, kindLabel, shortAddress } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Flows" };
@@ -38,7 +38,20 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
     before: Number.isSafeInteger(before) && before > 0 ? before : undefined,
     limit: 50,
   };
-  const [page, entities] = await Promise.all([api.flows(query), api.entities()]);
+  const [page, entities, assets] = await Promise.all([
+    api.flows(query),
+    api.entities(),
+    api.assets(24),
+  ]);
+  // Listed tokens, then the busiest unlisted ones. A symbol in the URL names a listed token.
+  const assetOptions = [
+    ...assets.assets.filter((a) => a.listed),
+    ...assets.assets.filter((a) => !a.listed && a.flows > 0).slice(0, 40),
+  ];
+  const selectedAsset =
+    assetOptions.find((a) => a.address === params.asset?.toLowerCase())?.address ??
+    assetOptions.find((a) => a.listed && a.symbol?.toLowerCase() === params.asset?.toLowerCase())?.address ??
+    "";
 
   const older = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -56,10 +69,13 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
 
       <form method="get" className="flex flex-wrap items-end gap-4">
         <Field label="Asset" htmlFor="asset">
-          <select id="asset" name="asset" defaultValue={params.asset ?? ""} className={SELECT}>
+          <select id="asset" name="asset" defaultValue={selectedAsset} className={`${SELECT} max-w-56`}>
             <option value="">All assets</option>
-            {ASSETS.map((asset) => (
-              <option key={asset}>{asset}</option>
+            {assetOptions.map((asset) => (
+              <option key={asset.address} value={asset.address}>
+                {asset.symbol ?? shortAddress(asset.address)}
+                {asset.listed ? "" : " (unlisted)"}
+              </option>
             ))}
           </select>
         </Field>

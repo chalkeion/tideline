@@ -12,6 +12,7 @@ use serde_json::{json, Value};
 
 use crate::config::{Contracts, ReferenceRates};
 use crate::decode::{bytes32_as_address, Decoded, Event};
+use crate::tokens::{TokenInfo, TokenMap};
 
 pub const ARC_DOMAIN: i32 = 26;
 
@@ -21,7 +22,11 @@ pub struct NewFlow {
     pub tx_hash: String,
     pub log_index: i32,
     pub block_number: i64,
-    pub asset: &'static str,
+    /// Display symbol; the token is `asset_address`.
+    pub asset: String,
+    pub asset_address: String,
+    /// ERC-721 token id; `None` for fungible tokens.
+    pub token_id: Option<U256>,
     pub kind: &'static str,
     pub from_address: String,
     pub to_address: String,
@@ -47,6 +52,11 @@ pub fn addr(a: &Address) -> String {
     format!("{a:#x}")
 }
 
+/// The `asset` a flow is stored under: the token's symbol, else its shortened address.
+fn asset_label(token: &Address, info: Option<&TokenInfo>) -> String {
+    info.map_or_else(|| short_address(&addr(token)), TokenInfo::label)
+}
+
 /// A cross-chain party: the EVM address when it is one, else the raw bytes32.
 fn remote(value: &B256) -> String {
     match bytes32_as_address(value) {
@@ -55,7 +65,7 @@ fn remote(value: &B256) -> String {
     }
 }
 
-/// Raw 6-decimal token units → notional USD.
+/// Raw token units → notional USD.
 pub fn usd_value(amount: U256, decimals: u32, rate: f64) -> f64 {
     let units = u128::try_from(amount).unwrap_or(u128::MAX) as f64;
     units / 10f64.powi(decimals as i32) * rate
@@ -160,10 +170,23 @@ fn native_only_sends(events: &[&Decoded], contracts: &Contracts) -> Vec<Decoded>
         .collect()
 }
 
-/// Collapse every decoded event of a block range into flows and clustering links.
+/// Notional USD of `amount` raw units of `token`: listed tokens with a known rate only.
+fn token_usd(token: Option<&TokenInfo>, amount: U256, rates: &ReferenceRates) -> Option<f64> {
+    let token = token?;
+    Some(usd_value(
+        amount,
+        token.decimals?,
+        rates.price(token.price?)?,
+    ))
+}
+
+/// Collapse every decoded event of a block range into flows and clustering links. Every
+/// token in `events` must be in `tokens` (see `tokens::discover`); one that is not is
+/// still stored, under its address and unpriced.
 pub fn build_flows(
     events: &[Decoded],
     contracts: &Contracts,
+    tokens: &TokenMap,
     rates: &ReferenceRates,
 ) -> (Vec<NewFlow>, Vec<NewLink>) {
     let mut by_tx: BTreeMap<(u64, B256), Vec<&Decoded>> = BTreeMap::new();
@@ -187,7 +210,9 @@ pub fn build_flows(
             .collect();
         events.sort_by_key(|e| e.log_index);
         let native: Vec<u32> = native.iter().map(|e| e.log_index).collect();
-        build_tx_flows(&events, &native, contracts, rates, &mut flows, &mut links);
+        build_tx_flows(
+            &events, &native, contracts, tokens, rates, &mut flows, &mut links,
+        );
     }
     (flows, links)
 }
@@ -197,6 +222,7 @@ fn build_tx_flows(
     // Log indexes of the transfers that were native sends.
     native: &[u32],
     contracts: &Contracts,
+    tokens: &TokenMap,
     rates: &ReferenceRates,
     flows: &mut Vec<NewFlow>,
     links: &mut Vec<NewLink>,
@@ -217,23 +243,25 @@ fn build_tx_flows(
                 src_domain: Option<i32>,
                 dst_domain: Option<i32>,
                 details: Value|
-     -> Option<NewFlow> {
-        let token = contracts.token(token)?;
-        Some(NewFlow {
+     -> NewFlow {
+        let info = tokens.get(token);
+        NewFlow {
             tx_hash: tx_hash.clone(),
             log_index: log_index as i32,
             block_number,
-            asset: token.symbol,
+            asset: asset_label(token, info),
+            asset_address: addr(token),
+            token_id: None,
             kind,
             from_address: from,
             to_address: to,
             amount: Some(amount),
-            usd_value: Some(usd_value(amount, token.decimals, rates.rate(token.symbol))),
+            usd_value: token_usd(info, amount, rates),
             visibility: "public",
             src_domain,
             dst_domain,
             details,
-        })
+        }
     };
 
     // CCTP inbound mints pair, in order, with the MessageReceived logs of the same tx.
@@ -296,7 +324,7 @@ fn build_tx_flows(
                 };
                 let to = remote(mint_recipient);
                 details["self_bridge"] = json!(to == addr(&from));
-                flows.extend(flow(
+                flows.push(flow(
                     e.log_index,
                     token,
                     "cctp_outbound",
@@ -333,7 +361,7 @@ fn build_tx_flows(
                     details["finality_threshold_executed"] = json!(finality);
                     details["fast_transfer"] = json!(finality < 2000);
                 }
-                flows.extend(flow(
+                flows.push(flow(
                     e.log_index,
                     token,
                     "cctp_inbound",
@@ -356,7 +384,7 @@ fn build_tx_flows(
                     .or_default()
                     .touching
                     .push(contracts.gateway_wallet);
-                flows.extend(flow(
+                flows.push(flow(
                     e.log_index,
                     token,
                     "gateway_deposit",
@@ -389,7 +417,7 @@ fn build_tx_flows(
                         evidence_tx: tx_hash.clone(),
                     });
                 }
-                flows.extend(flow(
+                flows.push(flow(
                     e.log_index,
                     token,
                     "gateway_outbound",
@@ -415,7 +443,7 @@ fn build_tx_flows(
                 let s = suppress.entry(*token).or_default();
                 s.mints = true;
                 s.touching.push(contracts.gateway_minter);
-                flows.extend(flow(
+                flows.push(flow(
                     e.log_index,
                     token,
                     "gateway_inbound",
@@ -428,12 +456,14 @@ fn build_tx_flows(
                 ));
             }
             Event::ShieldedTransfer { token, from, to } => {
-                if let Some(t) = contracts.token(token) {
+                if contracts.token(token).is_some() {
                     flows.push(NewFlow {
                         tx_hash: tx_hash.clone(),
                         log_index: e.log_index as i32,
                         block_number,
-                        asset: t.symbol,
+                        asset: asset_label(token, tokens.get(token)),
+                        asset_address: addr(token),
+                        token_id: None,
                         kind: "transfer",
                         from_address: addr(from),
                         to_address: addr(to),
@@ -445,6 +475,36 @@ fn build_tx_flows(
                         details: json!({ "privacy": "confidential_transfer" }),
                     });
                 }
+            }
+            Event::NftTransfer {
+                token,
+                from,
+                to,
+                token_id,
+            } => {
+                let kind = if from.is_zero() {
+                    "mint"
+                } else if to.is_zero() {
+                    "burn"
+                } else {
+                    "transfer"
+                };
+                flows.push(NewFlow {
+                    token_id: Some(*token_id),
+                    // An NFT has no notional USD value Tideline can stand behind.
+                    usd_value: None,
+                    ..flow(
+                        e.log_index,
+                        token,
+                        kind,
+                        addr(from),
+                        addr(to),
+                        U256::from(1u8),
+                        None,
+                        None,
+                        json!({}),
+                    )
+                });
             }
             Event::Transfer { .. }
             | Event::NativeTransfer { .. }
@@ -493,7 +553,7 @@ fn build_tx_flows(
         } else {
             "transfer"
         };
-        flows.extend(flow(
+        flows.push(flow(
             e.log_index,
             token,
             kind,
@@ -537,6 +597,39 @@ pub fn format_usd(usd: f64) -> String {
     }
 }
 
+/// A token amount for prose: "1.2M", "18.5K", "12.34", "0.0031". Exact amounts stay in
+/// the flow's `amount`.
+pub fn format_amount(units: &str) -> String {
+    let Ok(value) = units.parse::<f64>() else {
+        return units.to_string();
+    };
+    let trim = |s: String| {
+        if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s
+        }
+    };
+    let abs = value.abs();
+    if abs >= 1e15 {
+        format!("{value:.2e}")
+    } else if abs >= 1e12 {
+        format!("{:.1}T", value / 1e12)
+    } else if abs >= 1e9 {
+        format!("{:.1}B", value / 1e9)
+    } else if abs >= 1e6 {
+        format!("{:.1}M", value / 1e6)
+    } else if abs >= 1e3 {
+        format!("{:.1}K", value / 1e3)
+    } else if abs >= 1.0 || abs == 0.0 {
+        trim(format!("{value:.2}"))
+    } else {
+        // Three significant digits below one.
+        let places = ((-abs.log10()).ceil() as usize + 2).min(18);
+        trim(format!("{value:.places$}"))
+    }
+}
+
 pub fn short_address(address: &str) -> String {
     if address.len() > 12 && address.is_ascii() {
         format!("{}…{}", &address[..6], &address[address.len() - 4..])
@@ -550,6 +643,13 @@ pub fn short_address(address: &str) -> String {
 pub struct Narrative<'a> {
     pub kind: &'a str,
     pub asset: &'a str,
+    /// An unlisted token's symbol is whatever its deployer chose, so the prose says so:
+    /// narratives travel into compliance reports.
+    pub asset_listed: bool,
+    /// Token units as a decimal string; told when there is no USD value to tell.
+    pub amount: Option<&'a str>,
+    /// ERC-721 token id.
+    pub token_id: Option<&'a str>,
     pub usd_value: Option<f64>,
     pub visibility: &'a str,
     pub from_address: &'a str,
@@ -594,9 +694,12 @@ impl Narrative<'_> {
             _ if internal => "internal treasury movement".to_string(),
             _ => "transfer".to_string(),
         };
-        let size = match (self.visibility, self.usd_value) {
-            ("shielded", _) | (_, None) => "Amount-shielded".to_string(),
-            (_, Some(usd)) => format!("{} {}", format_usd(usd), size_tier(usd)),
+        let size = match (self.visibility, self.token_id, self.usd_value, self.amount) {
+            ("shielded", ..) => "Amount-shielded".to_string(),
+            (_, Some(id), ..) => format!("#{id}"),
+            (_, None, Some(usd), _) => format!("{} {}", format_usd(usd), size_tier(usd)),
+            (_, None, None, Some(amount)) => format_amount(amount),
+            (_, None, None, None) => "Unknown amount of".to_string(),
         };
         let party = |entity: Option<&str>, address: &str| match entity {
             Some(name) => name.to_string(),
@@ -609,7 +712,12 @@ impl Narrative<'_> {
             "burn" => format!("by {from}"),
             _ => format!("{from} → {to}"),
         };
-        format!("{size} {} {action}: {parties}", self.asset)
+        let asset = if self.asset_listed {
+            self.asset.to_string()
+        } else {
+            format!("{} (unlisted)", self.asset)
+        };
+        format!("{size} {asset} {action}: {parties}")
     }
 }
 
@@ -625,17 +733,101 @@ mod tests {
     const DEPOSITOR: &str = "0xc5567a5e3370d4dbfb0540025078e283e36a363d";
     const ALICE: &str = "0x00000000000000000000000000000000000a11ce";
 
-    fn run(logs: &[RawLog]) -> (Vec<NewFlow>, Vec<NewLink>) {
+    fn listed_tokens() -> TokenMap {
+        crate::tokens::listed(crate::config::Network::Testnet)
+            .unwrap()
+            .into_iter()
+            .map(|t| (t.address, t))
+            .collect()
+    }
+
+    fn run_with(logs: &[RawLog], tokens: &TokenMap) -> (Vec<NewFlow>, Vec<NewLink>) {
         let contracts = Contracts::arc_testnet();
         let rates = ReferenceRates {
             eurc_usd: 1.08,
             usyc_usd: 1.10,
+            btc_usd: Some(80_000.0),
+            eth_usd: None,
         };
         let events: Vec<Decoded> = logs
             .iter()
             .filter_map(|l| decode(l, &contracts, None))
             .collect();
-        build_flows(&events, &contracts, &rates)
+        build_flows(&events, &contracts, tokens, &rates)
+    }
+
+    fn run(logs: &[RawLog]) -> (Vec<NewFlow>, Vec<NewLink>) {
+        run_with(logs, &listed_tokens())
+    }
+
+    #[test]
+    fn listed_tokens_are_priced_by_their_own_decimals_and_source() {
+        const CIRBTC: &str = "0xf0c4a4ce82a5746abaad9425360ab04fbba432bf";
+        const WETH: &str = "0x2c4047028a72803939b6fb674d01bc059b5c4961";
+        let (flows, _) = run(&[
+            // 0.5 cirBTC at 8 decimals.
+            transfer(CIRBTC, ALICE, DEPOSITOR, 50_000_000, TX_A, 1),
+            transfer(WETH, ALICE, DEPOSITOR, 1_000_000_000_000_000_000, TX_A, 2),
+        ]);
+        assert_eq!(flows[0].asset, "cirBTC");
+        assert_eq!(flows[0].usd_value, Some(40_000.0));
+        // No ether price yet: WETH is tracked, not valued.
+        assert_eq!(flows[1].asset, "WETH");
+        assert_eq!(flows[1].usd_value, None);
+    }
+
+    #[test]
+    fn an_unlisted_token_is_tracked_unpriced_even_under_a_listed_symbol() {
+        // On Arc Mainnet, 0x8e98… calls itself USDC ("UpSideDownCat", 18 decimals).
+        const IMPOSTOR: &str = "0x8e98a62a995a50eca9979bfa016f91bf36a8f9d9";
+        let mut tokens = listed_tokens();
+        let impostor: Address = IMPOSTOR.parse().unwrap();
+        tokens.insert(
+            impostor,
+            TokenInfo {
+                address: impostor,
+                standard: crate::tokens::Standard::Erc20,
+                symbol: Some("USDC".into()),
+                name: Some("UpSideDownCat".into()),
+                decimals: Some(18),
+                listed: false,
+                issuer: None,
+                price: None,
+            },
+        );
+        let (flows, _) = run_with(
+            &[transfer(IMPOSTOR, ALICE, DEPOSITOR, 5_000_000, TX_A, 1)],
+            &tokens,
+        );
+        assert_eq!(flows.len(), 1);
+        assert_eq!(flows[0].asset_address, IMPOSTOR);
+        assert_eq!(flows[0].usd_value, None);
+
+        // A token never registered is still stored, under its address.
+        let unknown = "0x00000000000000000000000000000000000000c0";
+        let (flows, _) = run(&[transfer(unknown, ALICE, DEPOSITOR, 7, TX_A, 1)]);
+        assert_eq!(flows[0].asset, "0x0000…00c0");
+        assert_eq!(flows[0].amount, Some(U256::from(7u64)));
+    }
+
+    #[test]
+    fn an_nft_transfer_is_one_unpriced_flow_with_its_token_id() {
+        let mut log = transfer(
+            "0xc84bb45d43cd25d02b83b4c085eaa4e08da8f473",
+            ZERO,
+            ALICE,
+            0,
+            TX_A,
+            3,
+        );
+        log.topics.push(B256::from(U256::from(1234u64)));
+        log.data = Default::default();
+        let (flows, _) = run(&[log]);
+        assert_eq!(flows.len(), 1, "{flows:#?}");
+        assert_eq!(flows[0].kind, "mint");
+        assert_eq!(flows[0].token_id, Some(U256::from(1234u64)));
+        assert_eq!(flows[0].amount, Some(U256::from(1u8)));
+        assert_eq!(flows[0].usd_value, None);
     }
 
     #[test]
@@ -679,7 +871,7 @@ mod tests {
         let (flows, _) = run(&[native_send()]);
         assert_eq!(flows.len(), 1, "{flows:#?}");
         let f = &flows[0];
-        assert_eq!((f.asset, f.kind), ("USDC", "transfer"));
+        assert_eq!((f.asset.as_str(), f.kind), ("USDC", "transfer"));
         assert_eq!(f.from_address, "0x59825bb2aa01018adf67aa95741d23cae307431a");
         assert_eq!(f.to_address, "0xe72f8175ab0991dbb778f6de62009c5bf97c17f7");
         // 10.068033162188713984 USDC at 18 decimals, kept to the 6 the ERC-20 uses.
@@ -775,6 +967,9 @@ mod tests {
         let base = Narrative {
             kind: "cctp_outbound",
             asset: "USDC",
+            asset_listed: true,
+            amount: Some("12000000"),
+            token_id: None,
             usd_value: Some(12_000_000.0),
             visibility: "public",
             from_address: ALICE,
@@ -811,5 +1006,37 @@ mod tests {
             shielded.render(),
             "Amount-shielded USDC transfer: Acme Treasury → 0xc556…363d"
         );
+        let unpriced = Narrative {
+            kind: "transfer",
+            asset: "HUMPH",
+            asset_listed: false,
+            amount: Some("1250000.5"),
+            usd_value: None,
+            from_entity: None,
+            to_entity: None,
+            ..base
+        };
+        assert_eq!(
+            unpriced.render(),
+            "1.3M HUMPH (unlisted) transfer: 0x0000…11ce → 0xc556…363d"
+        );
+        let nft = Narrative {
+            token_id: Some("1234"),
+            asset: "AERO-CL",
+            ..unpriced
+        };
+        assert_eq!(
+            nft.render(),
+            "#1234 AERO-CL (unlisted) transfer: 0x0000…11ce → 0xc556…363d"
+        );
+        for (units, prose) in [
+            ("0.0031", "0.0031"),
+            ("0.000012345", "0.0000123"),
+            ("12.346", "12.35"),
+            ("0", "0"),
+            ("2500000000000", "2.5T"),
+        ] {
+            assert_eq!(format_amount(units), prose);
+        }
     }
 }

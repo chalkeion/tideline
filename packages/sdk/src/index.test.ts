@@ -46,6 +46,17 @@ describe('TidelineClient', () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({ entity_slug: 'visa' })
   })
 
+  it('addresses assets by contract', async () => {
+    const fetch = mockFetch(200, { window_hours: 1, assets: [] })
+    const client = new TidelineClient({ baseUrl: 'http://api.test', fetch })
+    await client.assets(1)
+    await client.asset('0xabc', 168)
+    expect(fetch.mock.calls.map((c) => c[0])).toEqual([
+      'http://api.test/v1/assets?window_hours=1',
+      'http://api.test/v1/assets/0xabc?window_hours=168',
+    ])
+  })
+
   it('reads the indexed network', async () => {
     const network = { key: 'mainnet', name: 'Arc Mainnet', chain_id: 5042, explorer_url: 'https://explorer.arc.io' }
     const fetch = mockFetch(200, network)

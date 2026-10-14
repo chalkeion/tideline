@@ -8,4 +8,8 @@ import type { KindVolume } from "./KindVolume";
 import type { ReferenceRatesInfo } from "./ReferenceRatesInfo";
 import type { TimeBucket } from "./TimeBucket";
 
-export type Overview = { window_hours: number, generated_at: string, ingest: IngestStatus, flows: number, volume_usd: number, active_addresses: number, assets: Array<AssetVolume>, kinds: Array<KindVolume>, corridors: Array<Corridor>, top_entities: Array<EntityActivity>, series: Array<TimeBucket>, series_bucket_minutes: number, coverage: Coverage, reference_rates: ReferenceRatesInfo, };
+export type Overview = { window_hours: number, generated_at: string, ingest: IngestStatus, flows: number, volume_usd: number, active_addresses: number, 
+/**
+ * The assets with the most volume; `asset_count` moved in the window in all.
+ */
+assets: Array<AssetVolume>, asset_count: number, kinds: Array<KindVolume>, corridors: Array<Corridor>, top_entities: Array<EntityActivity>, series: Array<TimeBucket>, series_bucket_minutes: number, coverage: Coverage, reference_rates: ReferenceRatesInfo, };

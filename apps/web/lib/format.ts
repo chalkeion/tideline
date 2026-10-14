@@ -13,7 +13,44 @@ const KIND_LABELS: Record<string, string> = {
 };
 
 export const KINDS = Object.keys(KIND_LABELS);
-export const ASSETS = ["USDC", "EURC", "USYC"] as const;
+/** Listed assets in fixed chart order: each keeps its series colour whatever else is shown. */
+export const SERIES_ASSETS = ["USDC", "EURC", "USYC", "cirBTC", "WETH"] as const;
+
+const PRICE_LABELS: Record<string, string> = {
+  usd: "1.00 USD",
+  eur: "ECB euro reference rate",
+  usyc: "USYC fund price report",
+  btc: "Bitcoin spot price",
+  eth: "Ether spot price",
+};
+
+/** How a token is valued, or that it is not. */
+export function priceLabel(source: string | null): string {
+  return source ? (PRICE_LABELS[source] ?? source) : "Unpriced";
+}
+
+export function standardLabel(standard: string): string {
+  return standard === "erc721" ? "NFT (ERC-721)" : "ERC-20";
+}
+
+/** A token amount for tables: compact above a million, otherwise up to four decimals. */
+export function tokenAmount(units: string | null): string {
+  if (units === null) return "Shielded";
+  const value = Number(units);
+  if (!Number.isFinite(value)) return units;
+  if (Math.abs(value) >= 1e6) {
+    return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(value);
+  }
+  if (value !== 0 && Math.abs(value) < 0.0001) {
+    return value.toLocaleString("en-US", { maximumSignificantDigits: 3 });
+  }
+  return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
+/** An NFT id short enough for a table cell. */
+export function tokenId(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+}
 
 export function kindLabel(kind: string): string {
   return KIND_LABELS[kind] ?? kind;

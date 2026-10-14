@@ -77,6 +77,15 @@ fn chain_name(chain_id: u64) -> String {
     )
 }
 
+/// An `eth_getLogs` filter. No addresses means logs from any contract.
+fn log_filter(from: Value, to: Value, addresses: &[Address], topics: &[B256]) -> Value {
+    let mut filter = json!({ "fromBlock": from, "toBlock": to, "topics": [topics] });
+    if !addresses.is_empty() {
+        filter["address"] = json!(addresses);
+    }
+    filter
+}
+
 /// Host of an endpoint, for logs. Never the full URL: provider keys live in the path.
 fn host(url: &str) -> String {
     reqwest::Url::parse(url)
@@ -186,18 +195,19 @@ impl RpcClient {
 
     /// The head and every matching log from `from` up to it, in one HTTP round-trip. Used
     /// at the tip, where a second round-trip would double settlement-to-ingest latency.
+    /// Empty `addresses` matches every contract.
     pub async fn head_and_logs(
         &self,
         from: u64,
         addresses: &[Address],
         topics: &[B256],
     ) -> Result<(u64, Vec<RawLog>), RpcError> {
-        let filter = json!({
-            "fromBlock": format!("0x{from:x}"),
-            "toBlock": "latest",
-            "address": addresses,
-            "topics": [topics],
-        });
+        let filter = log_filter(
+            json!(format!("0x{from:x}")),
+            json!("latest"),
+            addresses,
+            topics,
+        );
         let body = json!([
             { "jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": [] },
             { "jsonrpc": "2.0", "id": 2, "method": "eth_getLogs", "params": [filter] },
@@ -254,7 +264,8 @@ impl RpcClient {
         Ok(ts.to::<u64>())
     }
 
-    /// Logs from `addresses` whose topic0 is any of `topics`, over an inclusive block range.
+    /// Logs from `addresses` (empty: any contract) whose topic0 is any of `topics`, over an
+    /// inclusive block range.
     pub async fn get_logs(
         &self,
         from: u64,
@@ -262,14 +273,85 @@ impl RpcClient {
         addresses: &[Address],
         topics: &[B256],
     ) -> Result<Vec<RawLog>, RpcError> {
-        let filter = json!({
-            "fromBlock": format!("0x{from:x}"),
-            "toBlock": format!("0x{to:x}"),
-            "address": addresses,
-            "topics": [topics],
-        });
+        let filter = log_filter(
+            json!(format!("0x{from:x}")),
+            json!(format!("0x{to:x}")),
+            addresses,
+            topics,
+        );
         let v = self.call("eth_getLogs", json!([filter])).await?;
         serde_json::from_value(v).map_err(|e| RpcError::Malformed(e.to_string()))
+    }
+}
+
+/// An `eth_call` error that means the call itself reverted, as opposed to the endpoint
+/// refusing it.
+fn is_revert(err: &Value) -> bool {
+    err.get("code").and_then(Value::as_i64) == Some(3)
+        || err
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|m| m.to_ascii_lowercase().contains("revert"))
+}
+
+/// `name()`, `symbol()` and `decimals()`.
+const METADATA_SELECTORS: [&str; 3] = ["0x06fdde03", "0x95d89b41", "0x313ce567"];
+
+impl RpcClient {
+    /// `name()`, `symbol()` and `decimals()` of each contract, in one batch, as raw return
+    /// data. A call that reverts (a token without that function) is `None`. Any other
+    /// per-call error, such as a public endpoint's rate limit inside the batch, fails the
+    /// whole batch so the caller retries elsewhere: storing it as "no symbol" would be
+    /// permanent and wrong.
+    pub async fn token_metadata(
+        &self,
+        tokens: &[Address],
+    ) -> Result<Vec<[Option<Bytes>; 3]>, RpcError> {
+        let calls: Vec<Value> = tokens
+            .iter()
+            .enumerate()
+            .flat_map(|(i, token)| {
+                METADATA_SELECTORS.iter().enumerate().map(move |(j, data)| {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": i * 3 + j,
+                        "method": "eth_call",
+                        "params": [{ "to": token, "data": data }, "latest"],
+                    })
+                })
+            })
+            .collect();
+        let body = Value::Array(calls);
+        let replies: Vec<Value> = self
+            .on_active(|index| async move {
+                let replies: Vec<Value> = serde_json::from_value(self.post(index, &body).await?)
+                    .map_err(|e| RpcError::Malformed(format!("batch reply: {e}")))?;
+                match replies
+                    .iter()
+                    .filter_map(|r| r.get("error"))
+                    .find(|e| !is_revert(e))
+                {
+                    Some(err) => Err(rpc_error(err)),
+                    None => Ok(replies),
+                }
+            })
+            .await?;
+        let mut out = vec![[None, None, None]; tokens.len()];
+        for reply in replies {
+            let (Some(id), Some(result)) = (
+                reply.get("id").and_then(Value::as_u64),
+                reply.get("result").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            let id = id as usize;
+            if let (Some(slot), Some(bytes)) =
+                (out.get_mut(id / 3), crate::tokens::hex_bytes(result))
+            {
+                slot[id % 3] = Some(bytes);
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -336,6 +418,64 @@ mod tests {
             .to_string();
         assert!(err.contains("Arc Testnet (chain 5042002)"), "{err}");
         assert!(!err.contains("127.0.0.1:"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn token_metadata_maps_replies_and_tolerates_reverts() {
+        let node = serve(Router::new().route(
+            "/",
+            post(|| async {
+                // Out of order, and decimals() reverts.
+                Json(json!([
+                    { "jsonrpc": "2.0", "id": 1, "result": "0x4d4b520000000000000000000000000000000000000000000000000000000000" },
+                    { "jsonrpc": "2.0", "id": 2, "error": { "code": 3, "message": "execution reverted" } },
+                    { "jsonrpc": "2.0", "id": 0, "result": "0x" },
+                ]))
+            }),
+        ))
+        .await;
+        let rpc = RpcClient::new(&[node]).unwrap();
+        let token = Address::repeat_byte(0xaa);
+        let [name, symbol, decimals] = rpc.token_metadata(&[token]).await.unwrap().remove(0);
+        assert_eq!(name.map(|b| b.len()), Some(0));
+        assert_eq!(
+            symbol
+                .and_then(|b| crate::tokens::abi_string(&b))
+                .as_deref(),
+            Some("MKR")
+        );
+        assert!(decimals.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_rate_limit_inside_a_batch_fails_over_instead_of_reading_as_a_revert() {
+        let limited = serve(Router::new().route(
+            "/",
+            post(|| async {
+                Json(json!([
+                    { "jsonrpc": "2.0", "id": 0, "result": "0x" },
+                    { "jsonrpc": "2.0", "id": 1, "error": { "code": -32005, "message": "rate limit exceeded" } },
+                    { "jsonrpc": "2.0", "id": 2, "result": "0x" },
+                ]))
+            }),
+        ))
+        .await;
+        let rpc = RpcClient::new(&[limited, "http://127.0.0.1:1".into()]).unwrap();
+        let err = rpc
+            .token_metadata(&[Address::ZERO])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("rate limit"), "{err}");
+        assert_eq!(rpc.active.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_filter_without_addresses_matches_every_contract() {
+        let any = log_filter(json!("0x1"), json!("0x2"), &[], &[B256::ZERO]);
+        assert!(any.get("address").is_none());
+        let one = log_filter(json!("0x1"), json!("0x2"), &[Address::ZERO], &[B256::ZERO]);
+        assert_eq!(one["address"].as_array().unwrap().len(), 1);
     }
 
     #[tokio::test]

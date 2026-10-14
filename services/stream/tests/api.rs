@@ -12,6 +12,7 @@ use arc_stablecoin_stream::db;
 use arc_stablecoin_stream::enrich::{NewFlow, NewLink};
 use arc_stablecoin_stream::ingest::Progress;
 use arc_stablecoin_stream::rates::LiveRates;
+use arc_stablecoin_stream::tokens;
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
 use axum::Router;
@@ -25,6 +26,9 @@ const ADMIN_KEY: &str = "tdl_test_admin";
 const DEPOSITOR: &str = "0x631fdaafe9ff675bf7a122013d1555513363dcc7";
 const SIGNER: &str = "0x10f48f71dee384425ac52ea3dbf5180a95d3f5ab";
 const STRANGER: &str = "0x00000000000000000000000000000000000a11ce";
+const USDC: &str = "0x3600000000000000000000000000000000000000";
+/// On Arc Mainnet a token at this address calls itself USDC.
+const IMPOSTOR: &str = "0x8e98a62a995a50eca9979bfa016f91bf36a8f9d9";
 
 /// A fresh database per run, so tests never touch development data.
 async fn fresh_database(server_url: &str) -> (PgPool, String, String) {
@@ -48,7 +52,9 @@ fn flow(tx: &str, kind: &'static str, from: &str, to: &str, amount: Option<u64>)
         tx_hash: tx.to_string(),
         log_index: 0,
         block_number: 100,
-        asset: "USDC",
+        asset: "USDC".into(),
+        asset_address: USDC.into(),
+        token_id: None,
         kind,
         from_address: from.to_string(),
         to_address: to.to_string(),
@@ -111,6 +117,17 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
     db::seed_registry(&pool, Network::Testnet).await.unwrap();
     // Seeding twice must be a no-op, not a conflict.
     db::seed_registry(&pool, Network::Testnet).await.unwrap();
+    tokens::seed(&pool, Network::Testnet).await.unwrap();
+    tokens::seed(&pool, Network::Testnet).await.unwrap();
+    // A discovered token that copies a listed symbol.
+    sqlx::query(
+        "INSERT INTO tokens (address, standard, symbol, name, decimals)
+         VALUES ($1, 'erc20', 'USDC', 'UpSideDownCat', 18)",
+    )
+    .bind(IMPOSTOR)
+    .execute(&pool)
+    .await
+    .unwrap();
 
     let now = chrono::Utc::now().timestamp();
     let rows = vec![
@@ -155,6 +172,20 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
     )
     .await
     .unwrap();
+    let impostor = NewFlow {
+        asset_address: IMPOSTOR.into(),
+        usd_value: None,
+        ..flow(
+            "0xdd",
+            "transfer",
+            "0x00000000000000000000000000000000000000d1",
+            "0x00000000000000000000000000000000000000d2",
+            Some(3_000_000_000_000_000_000),
+        )
+    };
+    db::insert_flows(&mut tx, &[(impostor, now)], 0)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     let (outbound_id, shielded_id, public_id) = (ids[0], ids[1], ids[2]);
 
@@ -164,6 +195,7 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         rpc_urls: Vec::new(),
         port: 0,
         ingest_enabled: false,
+        track_all_tokens: true,
         backfill_blocks: 0,
         confirmations: 0,
         max_chunk_blocks: 1,
@@ -171,6 +203,8 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         rates: ReferenceRates {
             eurc_usd: 1.08,
             usyc_usd: 1.10,
+            btc_usd: None,
+            eth_usd: None,
         },
         live_rates: false,
         admin_key: Some(ADMIN_KEY.into()),
@@ -190,7 +224,8 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
     // Public tier: flows are visible, decoded context is not.
     let (status, body, _) = call(&app, get("/v1/flows", None)).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["flows"].as_array().unwrap().len(), 3);
+    // Three USDC flows and the impostor's.
+    assert_eq!(body["flows"].as_array().unwrap().len(), 4);
     assert!(body["flows"][0]["details"].is_null());
     let (_, body, _) = call(&app, get("/v1/flows", Some(ADMIN_KEY))).await;
     assert_eq!(body["flows"][0]["details"]["protocol"], "test");
@@ -217,7 +252,39 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
     assert_eq!(body["explorer_url"], "https://explorer.testnet.arc.io");
     // Only the seeded network's protocol contracts are labelled.
     let (_, body, _) = call(&app, get("/v1/entities/circle", None)).await;
-    assert_eq!(body["addresses"].as_array().unwrap().len(), 13);
+    assert_eq!(body["addresses"].as_array().unwrap().len(), 14);
+
+    // A symbol names the listed token only; the impostor is reachable by address.
+    let (_, body, _) = call(&app, get("/v1/flows?asset=usdc", None)).await;
+    assert_eq!(body["flows"].as_array().unwrap().len(), 3);
+    let (_, body, _) = call(&app, get(&format!("/v1/flows?asset={IMPOSTOR}"), None)).await;
+    let flows = body["flows"].as_array().unwrap();
+    assert_eq!(flows.len(), 1);
+    assert_eq!(flows[0]["asset_listed"], false);
+    // Its own 18 decimals, and no USD value.
+    assert_eq!(flows[0]["amount"], "3");
+    assert!(flows[0]["usd_value"].is_null());
+    assert!(flows[0]["narrative"]
+        .as_str()
+        .unwrap()
+        .starts_with("3 USDC (unlisted) transfer"));
+
+    let (status, body, _) = call(&app, get("/v1/assets", None)).await;
+    assert_eq!(status, StatusCode::OK);
+    let assets = body["assets"].as_array().unwrap();
+    let find = |address: &str| assets.iter().find(|a| a["address"] == address).unwrap();
+    assert_eq!(find(USDC)["listed"], true);
+    assert_eq!(find(USDC)["flows"], 3);
+    assert_eq!(find(USDC)["issuer"]["slug"], "circle");
+    assert_eq!(find(IMPOSTOR)["symbol_conflict"], true);
+    assert!(find(IMPOSTOR)["volume_usd"].is_null());
+    // Listed tokens show up even before they move.
+    assert_eq!(assets.iter().filter(|a| a["listed"] == true).count(), 5);
+    let (_, body, _) = call(&app, get(&format!("/v1/assets/{IMPOSTOR}"), None)).await;
+    assert_eq!(body["asset"]["amount"], "3");
+    assert_eq!(body["top_addresses"].as_array().unwrap().len(), 2);
+    let (status, _, _) = call(&app, get("/v1/assets/not-an-address", None)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     // Nothing is attributed to Visa before curation.
     let (_, body, _) = call(&app, get("/v1/entities/visa", None)).await;
@@ -271,8 +338,9 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         .starts_with("Amount-shielded USDC transfer: Visa"));
 
     // Coverage counts the shielded flow as attributed without inventing a value for it.
+    // The unpriced impostor flow counts as a flow, not as volume.
     let (_, body, _) = call(&app, get("/v1/coverage", None)).await;
-    assert_eq!(body["flows_total"], 3);
+    assert_eq!(body["flows_total"], 4);
     assert_eq!(body["flows_attributed"], 2);
     assert_eq!(body["volume_usd_total"], 2_000_005.0);
     assert_eq!(body["volume_usd_attributed"], 2_000_000.0);

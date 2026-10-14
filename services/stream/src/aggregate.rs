@@ -14,13 +14,16 @@ pub const CLAIM_WITHIN_SECONDS: i32 = 5;
 
 const FLOW_SELECT: &str = "
 SELECT f.id, f.tx_hash, f.log_index, f.block_number, f.block_time, f.ingested_at, f.live,
-       f.asset, f.kind, f.from_address, f.to_address, f.amount::text AS amount, f.usd_value,
+       COALESCE(tk.symbol, f.asset) AS asset, f.asset_address, f.token_id::text AS token_id, tk.decimals AS asset_decimals,
+       COALESCE(tk.listed, false) AS asset_listed,
+       f.kind, f.from_address, f.to_address, f.amount::text AS amount, f.usd_value,
        f.visibility, f.src_domain, f.dst_domain, f.details,
        fl.slug AS from_slug, fl.name AS from_name, fl.category AS from_category,
        fl.label AS from_label, fl.method AS from_method, fl.confidence AS from_confidence,
        tl.slug AS to_slug, tl.name AS to_name, tl.category AS to_category,
        tl.label AS to_label, tl.method AS to_method, tl.confidence AS to_confidence
 FROM flows f
+LEFT JOIN tokens tk ON tk.address = f.asset_address
 LEFT JOIN address_best_label fl ON fl.address = f.from_address
 LEFT JOIN address_best_label tl ON tl.address = f.to_address";
 
@@ -72,6 +75,15 @@ fn flow_from_row(row: &PgRow, with_details: bool) -> Flow {
     let asset: String = row.get("asset");
     let visibility: String = row.get("visibility");
     let usd_value: Option<f64> = row.get("usd_value");
+    let token_id: Option<String> = row.get("token_id");
+    let decimals: Option<i32> = row.get("asset_decimals");
+    // Unknown decimals: the raw units are the only honest amount.
+    let amount: Option<String> = row
+        .get::<Option<String>, _>("amount")
+        .map(|raw| match decimals {
+            Some(d) => format_units(&raw, d as usize),
+            None => raw,
+        });
     let src_domain: Option<i32> = row.get("src_domain");
     let dst_domain: Option<i32> = row.get("dst_domain");
     let details: serde_json::Value = row.get("details");
@@ -87,9 +99,13 @@ fn flow_from_row(row: &PgRow, with_details: bool) -> Flow {
         _ => "partial",
     };
 
+    let asset_listed: bool = row.get("asset_listed");
     let narrative = Narrative {
         kind: &kind,
         asset: &asset,
+        asset_listed,
+        amount: amount.as_deref(),
+        token_id: token_id.as_deref(),
         usd_value,
         visibility: &visibility,
         from_address: &from.address,
@@ -110,9 +126,10 @@ fn flow_from_row(row: &PgRow, with_details: bool) -> Flow {
         block_time: ts(block_time),
         ingested_at: ts(ingested_at),
         latency_ms: live.then(|| (ingested_at - block_time).num_milliseconds().max(0)),
-        amount: row
-            .get::<Option<String>, _>("amount")
-            .map(|raw| format_units(&raw, 6)),
+        amount,
+        asset_address: row.get("asset_address"),
+        asset_listed,
+        token_id,
         size_tier: usd_value.map(|v| size_tier(v).to_string()),
         usd_value,
         src_chain: src_domain.map(cctp_domain_name),
@@ -151,7 +168,17 @@ pub struct FlowFilter {
 fn push_filters(qb: &mut QueryBuilder<Postgres>, f: &FlowFilter) {
     qb.push(" WHERE true");
     if let Some(v) = &f.asset {
-        qb.push(" AND f.asset = ").push_bind(v.to_uppercase());
+        match crate::db::normalize_address(v) {
+            Some(address) => qb.push(" AND f.asset_address = ").push_bind(address),
+            // A symbol names a listed token only: an unlisted token can copy any symbol.
+            None => qb
+                .push(
+                    " AND f.asset_address IN (SELECT address FROM tokens
+                       WHERE listed AND upper(symbol) = upper(",
+                )
+                .push_bind(v.clone())
+                .push("))"),
+        };
     }
     if let Some(v) = &f.kind {
         qb.push(" AND f.kind = ").push_bind(v.clone());
@@ -411,11 +438,15 @@ fn bucket_minutes(window_hours: i32) -> i32 {
     }
 }
 
+/// Assets listed on the overview; the rest are on `/v1/assets`.
+const OVERVIEW_ASSETS: i64 = 10;
+
 pub struct OverviewParts {
     pub flows: i64,
     pub volume_usd: f64,
     pub active_addresses: i64,
     pub assets: Vec<AssetVolume>,
+    pub asset_count: i64,
     pub kinds: Vec<KindVolume>,
     pub corridors: Vec<Corridor>,
     pub top_entities: Vec<EntityActivity>,
@@ -438,21 +469,31 @@ pub async fn overview(pool: &PgPool, window_hours: i32) -> sqlx::Result<Overview
     .await?;
 
     let assets = sqlx::query(&format!(
-        "SELECT asset, count(*) AS flows, COALESCE(sum(usd_value), 0) AS volume,
-                count(*) FILTER (WHERE visibility = 'shielded') AS shielded
-         FROM flows WHERE {WINDOW} GROUP BY asset ORDER BY volume DESC"
+        "SELECT f.asset_address, COALESCE(max(tk.symbol), max(f.asset)) AS asset,
+                COALESCE(bool_or(tk.listed), false) AS listed, count(*) AS flows,
+                COALESCE(sum(f.usd_value), 0) AS volume, count(f.usd_value) > 0 AS priced,
+                count(*) FILTER (WHERE f.visibility = 'shielded') AS shielded,
+                count(*) OVER () AS asset_count
+         FROM flows f LEFT JOIN tokens tk ON tk.address = f.asset_address
+         WHERE f.{WINDOW} GROUP BY f.asset_address
+         ORDER BY volume DESC, flows DESC LIMIT {OVERVIEW_ASSETS}"
     ))
     .bind(window_hours)
     .fetch_all(pool)
-    .await?
-    .iter()
-    .map(|r| AssetVolume {
-        asset: r.get("asset"),
-        flows: r.get("flows"),
-        volume_usd: r.get("volume"),
-        shielded_flows: r.get("shielded"),
-    })
-    .collect();
+    .await?;
+    let asset_count = assets.first().map_or(0, |r| r.get("asset_count"));
+    let assets = assets
+        .iter()
+        .map(|r| AssetVolume {
+            asset: r.get("asset"),
+            address: r.get("asset_address"),
+            listed: r.get("listed"),
+            priced: r.get("priced"),
+            flows: r.get("flows"),
+            volume_usd: r.get("volume"),
+            shielded_flows: r.get("shielded"),
+        })
+        .collect();
 
     let kinds = sqlx::query(&format!(
         "SELECT kind, count(*) AS flows, COALESCE(sum(usd_value), 0) AS volume
@@ -528,9 +569,11 @@ pub async fn overview(pool: &PgPool, window_hours: i32) -> sqlx::Result<Overview
 
     let minutes = bucket_minutes(window_hours);
     let series = sqlx::query(&format!(
-        "SELECT date_bin(make_interval(mins => $2), block_time, TIMESTAMPTZ 'epoch') AS t, asset,
-                count(*) AS flows, COALESCE(sum(usd_value), 0) AS volume
-         FROM flows WHERE {WINDOW} GROUP BY 1, 2 ORDER BY 1, 2"
+        "SELECT date_bin(make_interval(mins => $2), f.block_time, TIMESTAMPTZ 'epoch') AS t,
+                f.asset_address, COALESCE(max(tk.symbol), max(f.asset)) AS asset,
+                count(*) AS flows, COALESCE(sum(f.usd_value), 0) AS volume
+         FROM flows f LEFT JOIN tokens tk ON tk.address = f.asset_address
+         WHERE f.{WINDOW} AND f.usd_value IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2"
     ))
     .bind(window_hours)
     .bind(minutes)
@@ -540,6 +583,7 @@ pub async fn overview(pool: &PgPool, window_hours: i32) -> sqlx::Result<Overview
     .map(|r| TimeBucket {
         t: ts(r.get("t")),
         asset: r.get("asset"),
+        address: r.get("asset_address"),
         flows: r.get("flows"),
         volume_usd: r.get("volume"),
     })
@@ -550,6 +594,7 @@ pub async fn overview(pool: &PgPool, window_hours: i32) -> sqlx::Result<Overview
         volume_usd: totals.get("volume"),
         active_addresses: totals.get("addresses"),
         assets,
+        asset_count,
         kinds,
         corridors,
         top_entities,
@@ -780,6 +825,165 @@ pub async fn address_totals(pool: &PgPool, address: &str) -> sqlx::Result<(i64, 
     .fetch_one(pool)
     .await?;
     Ok((r.get("flows"), r.get("inflow"), r.get("outflow")))
+}
+
+/// Assets returned by `/v1/assets` at most.
+pub const ASSET_LIST_LIMIT: i64 = 500;
+
+/// Token registry rows with their activity in the window. `address` narrows to one token;
+/// otherwise every listed token plus every token that moved in the window.
+async fn asset_summaries(
+    pool: &PgPool,
+    window_hours: i32,
+    address: Option<&str>,
+) -> sqlx::Result<Vec<AssetSummary>> {
+    let rows = sqlx::query(
+        "WITH w AS (
+             SELECT asset_address, count(*) AS flows, sum(amount) AS amount,
+                    sum(usd_value) AS volume
+             FROM flows WHERE block_time > now() - make_interval(hours => $1)
+               AND ($2::text IS NULL OR asset_address = $2)
+             GROUP BY asset_address
+         ), parties AS (
+             SELECT asset_address, count(DISTINCT address) AS n FROM (
+                 SELECT asset_address, from_address AS address FROM flows
+                 WHERE block_time > now() - make_interval(hours => $1)
+                   AND ($2::text IS NULL OR asset_address = $2)
+                 UNION ALL
+                 SELECT asset_address, to_address FROM flows
+                 WHERE block_time > now() - make_interval(hours => $1)
+                   AND ($2::text IS NULL OR asset_address = $2)
+             ) x WHERE address <> $3 GROUP BY asset_address
+         )
+         SELECT t.address, t.standard, t.symbol, t.name, t.decimals, t.listed, t.price_source,
+                t.first_seen_block, e.slug, e.name AS issuer_name, e.category,
+                NOT t.listed AND EXISTS (
+                    SELECT 1 FROM tokens l WHERE l.listed AND upper(l.symbol) = upper(t.symbol)
+                ) AS symbol_conflict,
+                COALESCE(w.flows, 0) AS flows, COALESCE(w.amount, 0)::text AS amount, w.volume,
+                COALESCE(p.n, 0) AS active_addresses
+         FROM tokens t
+         LEFT JOIN w ON w.asset_address = t.address
+         LEFT JOIN parties p ON p.asset_address = t.address
+         LEFT JOIN entities e ON e.slug = t.issuer_slug
+         WHERE ($2::text IS NULL AND (t.listed OR w.flows > 0)) OR t.address = $2
+         ORDER BY w.volume DESC NULLS LAST, COALESCE(w.flows, 0) DESC, t.address
+         LIMIT $4",
+    )
+    .bind(window_hours)
+    .bind(address)
+    .bind(ZERO_ADDRESS)
+    .bind(ASSET_LIST_LIMIT)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let decimals: Option<i32> = r.get("decimals");
+            let raw: String = r.get("amount");
+            let flows: i64 = r.get("flows");
+            let price_source: Option<String> = r.get("price_source");
+            let volume: Option<f64> = r.get("volume");
+            let slug: Option<String> = r.get("slug");
+            AssetSummary {
+                address: r.get("address"),
+                symbol: r.get("symbol"),
+                name: r.get("name"),
+                standard: r.get("standard"),
+                decimals,
+                listed: r.get("listed"),
+                symbol_conflict: r.get("symbol_conflict"),
+                issuer: slug.map(|slug| EntityRef {
+                    slug,
+                    name: r.get("issuer_name"),
+                    category: r.get("category"),
+                }),
+                // A priced token with no flows moved nothing; one whose flows predate its
+                // rate has no USD value to report.
+                volume_usd: volume.or((price_source.is_some() && flows == 0).then_some(0.0)),
+                price_source,
+                first_seen_block: r.get("first_seen_block"),
+                flows,
+                amount: match decimals {
+                    Some(d) => format_units(&raw, d as usize),
+                    None => raw,
+                },
+                active_addresses: r.get("active_addresses"),
+            }
+        })
+        .collect())
+}
+
+/// Every listed token, and every token that moved in the window: priced volume first.
+pub async fn assets(pool: &PgPool, window_hours: i32) -> sqlx::Result<AssetList> {
+    Ok(AssetList {
+        window_hours,
+        assets: asset_summaries(pool, window_hours, None).await?,
+    })
+}
+
+/// One token: its registry entry, activity, and the addresses that move it most.
+pub async fn asset_profile(
+    pool: &PgPool,
+    address: &str,
+    window_hours: i32,
+) -> sqlx::Result<Option<AssetProfile>> {
+    let Some(asset) = asset_summaries(pool, window_hours, Some(address))
+        .await?
+        .into_iter()
+        .next()
+    else {
+        return Ok(None);
+    };
+    let decimals = asset.decimals.map(|d| d as usize);
+    let top_addresses = sqlx::query(
+        "SELECT x.address, count(*) AS flows, COALESCE(sum(x.sent), 0)::text AS sent,
+                COALESCE(sum(x.received), 0)::text AS received,
+                l.slug, l.name, l.category
+         FROM (
+             SELECT from_address AS address, amount AS sent, 0::numeric AS received
+             FROM flows WHERE asset_address = $1
+               AND block_time > now() - make_interval(hours => $2) AND from_address <> $3
+             UNION ALL
+             SELECT to_address, 0::numeric, amount
+             FROM flows WHERE asset_address = $1
+               AND block_time > now() - make_interval(hours => $2) AND to_address <> $3
+         ) x
+         LEFT JOIN address_best_label l ON l.address = x.address
+         GROUP BY x.address, l.slug, l.name, l.category
+         ORDER BY COALESCE(sum(x.sent), 0) + COALESCE(sum(x.received), 0) DESC, x.address
+         LIMIT 10",
+    )
+    .bind(address)
+    .bind(window_hours)
+    .bind(ZERO_ADDRESS)
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|r| {
+        let units = |col: &str| {
+            let raw: String = r.get(col);
+            decimals.map_or(raw.clone(), |d| format_units(&raw, d))
+        };
+        let slug: Option<String> = r.get("slug");
+        AssetParty {
+            address: r.get("address"),
+            entity: slug.map(|slug| EntityRef {
+                slug,
+                name: r.get("name"),
+                category: r.get("category"),
+            }),
+            flows: r.get("flows"),
+            sent: units("sent"),
+            received: units("received"),
+        }
+    })
+    .collect();
+    Ok(Some(AssetProfile {
+        window_hours,
+        asset,
+        top_addresses,
+    }))
 }
 
 #[cfg(test)]

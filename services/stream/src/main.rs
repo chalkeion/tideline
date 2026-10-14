@@ -7,6 +7,7 @@ use arc_stablecoin_stream::db;
 use arc_stablecoin_stream::ingest::{Ingestor, Progress};
 use arc_stablecoin_stream::rates::LiveRates;
 use arc_stablecoin_stream::rpc::RpcClient;
+use arc_stablecoin_stream::tokens;
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -31,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&cfg.database_url).await?;
     db::bind_network(&pool, cfg.network).await?;
     db::seed_registry(&pool, cfg.network).await?;
+    tokens::seed(&pool, cfg.network).await?;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -67,9 +69,14 @@ async fn serve(cfg: Arc<Config>, pool: sqlx::PgPool) -> anyhow::Result<()> {
         let rpc = RpcClient::new(&cfg.rpc_urls)?;
         rpc.check_chain(cfg.network).await?;
         tracing::info!(
-            "indexing {} (chain {})",
+            "indexing {} (chain {}), {}",
             cfg.network.name(),
-            cfg.network.chain_id()
+            cfg.network.chain_id(),
+            if cfg.track_all_tokens {
+                "every token"
+            } else {
+                "listed tokens only"
+            }
         );
         let ingestor = Ingestor {
             cfg: cfg.clone(),
@@ -78,6 +85,7 @@ async fn serve(cfg: Arc<Config>, pool: sqlx::PgPool) -> anyhow::Result<()> {
             rates: rates.clone(),
             progress: progress.clone(),
             new_flows: new_flows.clone(),
+            tokens: tokens::load(&pool).await?,
         };
         tokio::spawn(ingestor.run());
     } else {

@@ -15,6 +15,7 @@ use crate::enrich::build_flows;
 use crate::rates::LiveRates;
 use crate::rpc::{RawLog, RpcClient};
 use crate::schema::IngestStatus;
+use crate::tokens::{self, Sighting, TokenMap};
 
 /// Shared, lock-free view of ingest progress for the API.
 #[derive(Default)]
@@ -61,12 +62,15 @@ pub struct Ingestor {
     pub progress: Arc<Progress>,
     /// Ids of newly stored flows, for live subscribers.
     pub new_flows: broadcast::Sender<Vec<i64>>,
+    /// The token registry, grown as new tokens appear (see `tokens::discover`).
+    pub tokens: TokenMap,
 }
 
 impl Ingestor {
     /// Follow the chain until the task is dropped. Errors are logged and retried.
-    pub async fn run(self) {
+    pub async fn run(mut self) {
         self.progress.running.store(true, Ordering::Relaxed);
+        tokens::repair(&self.pool, &self.rpc, &mut self.tokens).await;
         let mut chunk = self.cfg.max_chunk_blocks.min(20);
         // Set once backfill first reaches the head. Blocks above it were produced while
         // tip-following, and all of them count toward the latency claim from then on,
@@ -101,13 +105,23 @@ impl Ingestor {
 
     /// Ingest one block range. Returns the head when the range reached it.
     async fn step(
-        &self,
+        &mut self,
         chunk: &mut u64,
         live_after: Option<u64>,
         at_tip: bool,
     ) -> anyhow::Result<Option<u64>> {
-        let cfg = &self.cfg;
-        let addresses = cfg.contracts.watched();
+        let cfg = self.cfg.clone();
+        // No address filter: every token's transfers. Otherwise the protocol contracts and
+        // the listed tokens only.
+        let addresses = if cfg.track_all_tokens {
+            Vec::new()
+        } else {
+            let mut watched = cfg.contracts.watched();
+            watched.extend(self.tokens.values().filter(|t| t.listed).map(|t| t.address));
+            watched.sort();
+            watched.dedup();
+            watched
+        };
         let topics = watched_topics(cfg.confidential_transfer_topic);
         let cursor = db::load_cursor(&self.pool).await?.map(|next| next as u64);
 
@@ -160,18 +174,31 @@ impl Ingestor {
     }
 
     async fn store_range(
-        &self,
+        &mut self,
         logs: &[RawLog],
         to: u64,
         live_after: u64,
     ) -> anyhow::Result<usize> {
-        let cfg = &self.cfg;
+        let cfg = self.cfg.clone();
         let events: Vec<Decoded> = logs
             .iter()
             .filter(|l| !l.removed)
             .filter_map(|l| decode(l, &cfg.contracts, cfg.confidential_transfer_topic))
             .collect();
-        let (flows, links) = build_flows(&events, &cfg.contracts, &self.rates.current());
+        let seen: Vec<Sighting> = events
+            .iter()
+            .filter_map(|e| {
+                let (address, standard) = e.event.token()?;
+                Some(Sighting {
+                    address,
+                    standard,
+                    block: e.block_number,
+                })
+            })
+            .collect();
+        tokens::discover(&self.pool, &self.rpc, &mut self.tokens, &seen).await?;
+        let (flows, links) =
+            build_flows(&events, &cfg.contracts, &self.tokens, &self.rates.current());
 
         let timestamps = self.block_timestamps(logs, &flows).await?;
         let rows: Vec<_> = flows

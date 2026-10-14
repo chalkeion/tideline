@@ -23,7 +23,7 @@ export default async function EntitiesPage({
     <>
       <PageHeader
         title="Entities"
-        lede="The attribution registry: who is behind the addresses moving stablecoins on Arc, and the evidence for each claim."
+        lede="The attribution registry: who is behind the addresses moving value on Arc, and the evidence for each claim."
       />
 
       {entities.length === 0 ? (

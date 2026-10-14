@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TimeBucket } from "@tideline/sdk";
-import { ASSETS, usd } from "@/lib/format";
+import { SERIES_ASSETS, usd } from "@/lib/format";
 
 const SERIES: Record<string, string> = {
   USDC: "var(--series-usdc)",
   EURC: "var(--series-eurc)",
   USYC: "var(--series-usyc)",
+  cirBTC: "var(--series-cirbtc)",
+  WETH: "var(--series-weth)",
 };
 
 const HEIGHT = 220;
@@ -66,7 +68,7 @@ export function VolumeChart({
       }));
   }, [series]);
 
-  const assets = ASSETS.filter((asset) => buckets.some((b) => (b.values[asset] ?? 0) > 0));
+  const assets = SERIES_ASSETS.filter((asset) => buckets.some((b) => (b.values[asset] ?? 0) > 0));
   const max = Math.max(...buckets.map((b) => b.total), 0);
 
   if (buckets.length === 0 || max === 0) {

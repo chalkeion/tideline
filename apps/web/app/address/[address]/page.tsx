@@ -15,7 +15,12 @@ const LINK_TYPES: Record<string, string> = {
 
 export default async function AddressPage({ params }: { params: Promise<{ address: string }> }) {
   const { address } = await params;
-  const [profile, network] = await Promise.all([orNotFound(api.address(address)), getNetwork()]);
+  const [profile, network, token] = await Promise.all([
+    orNotFound(api.address(address)),
+    getNetwork(),
+    // Most addresses are not token contracts.
+    api.asset(address).catch(() => null),
+  ]);
   const best = profile.labels[0];
 
   return (
@@ -24,6 +29,16 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         title={best ? best.entity.name : "Unattributed address"}
         lede={<span className="break-all font-mono text-xs">{profile.address}</span>}
       />
+
+      {token ? (
+        <p role="note" className="rounded-sm border border-line-strong px-4 py-3 text-sm leading-relaxed text-ink-2">
+          This address is the contract of {token.asset.listed ? "the listed token" : "an unlisted token"}{" "}
+          <Link href={`/assets/${token.asset.address}`} className="font-medium text-accent-ink underline underline-offset-2">
+            {token.asset.symbol ?? "without a symbol"}
+          </Link>
+          . Its transfers are on the asset page.
+        </p>
+      ) : null}
 
       <dl className="grid grid-cols-2 gap-6 md:grid-cols-3">
         <Stat label="Flows on file" value={count(profile.flows)} />

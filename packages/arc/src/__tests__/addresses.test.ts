@@ -9,20 +9,29 @@ interface Seed {
   entities: { slug: string; addresses: { network: string; address: string }[] }[]
 }
 
-/** The stream service's registry seed, which must label the same contracts. */
-const seed = JSON.parse(
-  readFileSync(
-    new URL('../../../../services/stream/data/entities.seed.json', import.meta.url),
-    'utf8',
-  ),
-) as Seed
+interface TokenSeed {
+  tokens: { network: string; address: string; symbol: string }[]
+}
+
+/** The stream service's seeds, which must label and list the same contracts. */
+function streamSeed<T>(file: string): T {
+  return JSON.parse(
+    readFileSync(new URL(`../../../../services/stream/data/${file}`, import.meta.url), 'utf8'),
+  ) as T
+}
+const seed = streamSeed<Seed>('entities.seed.json')
+const tokenSeed = streamSeed<TokenSeed>('tokens.seed.json')
 
 /** Every contract Circle operates, except MessageV2: a library that never holds funds. */
 function circleContracts(set: ArcAddresses): [string, string][] {
-  const { stablecoins, cctp, gateway, payments } = set
-  return Object.entries({ ...stablecoins, ...cctp, ...gateway, ...payments }).filter(
-    ([name]) => name !== 'MESSAGE_V2',
-  )
+  const { stablecoins, cctp, gateway, payments, wrapped } = set
+  return Object.entries({
+    ...stablecoins,
+    ...cctp,
+    ...gateway,
+    ...payments,
+    CIRBTC: wrapped.CIRBTC,
+  }).filter(([name]) => name !== 'MESSAGE_V2')
 }
 
 describe.each(Object.keys(arcChains) as ArcNetwork[])('%s addresses', (network) => {
@@ -46,5 +55,12 @@ describe.each(Object.keys(arcChains) as ArcNetwork[])('%s addresses', (network) 
 
   it.each(circleContracts(addresses[network]))('%s is labelled in the registry seed', (_, address) => {
     expect(seeded.has(address.toLowerCase())).toBe(true)
+  })
+
+  it('lists exactly the stablecoins and wrapped assets as priced tokens', () => {
+    const { stablecoins, wrapped } = addresses[network]
+    const tokens = [stablecoins.USDC, stablecoins.EURC, stablecoins.USYC, wrapped.CIRBTC, wrapped.WETH]
+    const listed = tokenSeed.tokens.filter((t) => t.network === network).map((t) => t.address.toLowerCase())
+    expect(listed.sort()).toEqual(tokens.map((a) => a.toLowerCase()).sort())
   })
 })

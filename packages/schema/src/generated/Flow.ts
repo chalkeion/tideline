@@ -5,13 +5,27 @@ export type Flow = { id: number, tx_hash: string, log_index: number, block_numbe
 /**
  * Settlement → attributed-and-queryable, in ms. Only for flows ingested live.
  */
-latency_ms: number | null, asset: string, kind: string, 
+latency_ms: number | null, 
+/**
+ * Display symbol. Symbols are not unique on chain; `asset_address` is.
+ */
+asset: string, asset_address: string, 
+/**
+ * Arc or the issuer publishes this token's address. An unlisted token can carry
+ * any symbol, including a listed token's.
+ */
+asset_listed: boolean, 
+/**
+ * ERC-721 token id. Null for fungible tokens.
+ */
+token_id: string | null, kind: string, 
 /**
  * public | shielded | disclosed
  */
 visibility: string, 
 /**
- * Token units as a decimal string. Null while the amount is shielded.
+ * Token units as a decimal string (raw units when the token's decimals are
+ * unknown). Null while the amount is shielded.
  */
 amount: string | null, usd_value: number | null, 
 /**

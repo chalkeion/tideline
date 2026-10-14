@@ -2,6 +2,8 @@ import type {
   AddressLabel,
   AddressProfile,
   ApiKeyCreated,
+  AssetList,
+  AssetProfile,
   ComplianceReport,
   Coverage,
   EntityProfile,
@@ -24,6 +26,7 @@ export interface TidelineClientOptions {
 }
 
 export interface FlowQuery {
+  /** Token contract address, or the symbol of a listed token. */
   asset?: string
   kind?: string
   /** Entity slug on either side. */
@@ -146,6 +149,18 @@ export class TidelineClient {
   /** The Arc network the service indexes, with its chain id and explorer. */
   network(): Promise<NetworkInfo> {
     return this.request('/v1/network')
+  }
+
+  /** Every listed token, and every token that moved in the window. */
+  assets(windowHours = 24): Promise<AssetList> {
+    return this.request(`/v1/assets${queryString({ window_hours: windowHours })}`)
+  }
+
+  /** One token by contract address, with the addresses that move it most. */
+  asset(address: string, windowHours = 24): Promise<AssetProfile> {
+    return this.request(
+      `/v1/assets/${encodeURIComponent(address)}${queryString({ window_hours: windowHours })}`,
+    )
   }
 
   overview(windowHours = 24): Promise<Overview> {

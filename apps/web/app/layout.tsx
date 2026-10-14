@@ -10,7 +10,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: { default: "Tideline", template: "%s | Tideline" },
-  description: "Attributed stablecoin-flow intelligence for Arc.",
+  description: "Attributed flow intelligence for every asset on Arc.",
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

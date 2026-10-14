@@ -29,9 +29,11 @@ use tower_http::trace::TraceLayer;
 use crate::aggregate::{self, FlowFilter};
 use crate::config::Config;
 use crate::db::{self, NewLabel};
+use crate::enrich;
 use crate::ingest::Progress;
 use crate::rates::LiveRates;
 use crate::schema::*;
+use crate::tokens;
 
 const PUBLIC_HISTORY_HOURS: i32 = 24;
 const REPORT_MAX_FLOWS: i64 = 5000;
@@ -179,6 +181,8 @@ pub fn app(state: AppState) -> Router {
     let v1 = Router::new()
         .route("/network", get(network))
         .route("/overview", get(overview))
+        .route("/assets", get(list_assets))
+        .route("/assets/:address", get(asset_profile))
         .route("/coverage", get(coverage))
         .route("/flows", get(list_flows))
         .route("/flows/stream", get(stream_flows))
@@ -340,6 +344,7 @@ async fn overview(
         volume_usd: parts.volume_usd,
         active_addresses: parts.active_addresses,
         assets: parts.assets,
+        asset_count: parts.asset_count,
         kinds: parts.kinds,
         corridors: parts.corridors,
         top_entities: parts.top_entities,
@@ -348,6 +353,28 @@ async fn overview(
         coverage,
         reference_rates: s.rates.info(),
     }))
+}
+
+async fn list_assets(
+    State(s): State<AppState>,
+    Extension(access): Extension<Access>,
+    Query(q): Query<WindowQuery>,
+) -> ApiResult<AssetList> {
+    Ok(Json(aggregate::assets(&s.pool, q.hours(access)).await?))
+}
+
+async fn asset_profile(
+    State(s): State<AppState>,
+    Extension(access): Extension<Access>,
+    Path(address): Path<String>,
+    Query(q): Query<WindowQuery>,
+) -> ApiResult<AssetProfile> {
+    let address = db::normalize_address(&address)
+        .ok_or_else(|| ApiErr::bad_request("not a valid EVM address"))?;
+    aggregate::asset_profile(&s.pool, &address, q.hours(access))
+        .await?
+        .map(Json)
+        .ok_or_else(|| ApiErr::not_found("asset"))
 }
 
 async fn coverage(
@@ -516,8 +543,8 @@ fn csv_field(value: &str) -> String {
 
 fn flows_csv(flows: &[Flow]) -> String {
     let mut out = String::from(
-        "flow_id,block_time,tx_hash,log_index,asset,kind,visibility,amount,usd_value,\
-from_address,from_entity,from_method,from_confidence,to_address,to_entity,to_method,\
+        "flow_id,block_time,tx_hash,log_index,asset,asset_address,asset_listed,token_id,kind,\
+visibility,amount,usd_value,from_address,from_entity,from_method,from_confidence,to_address,to_entity,to_method,\
 to_confidence,attribution,narrative\n",
     );
     for f in flows {
@@ -538,6 +565,9 @@ to_confidence,attribution,narrative\n",
             f.tx_hash.clone(),
             f.log_index.to_string(),
             f.asset.clone(),
+            f.asset_address.clone(),
+            f.asset_listed.to_string(),
+            f.token_id.clone().unwrap_or_default(),
             f.kind.clone(),
             f.visibility.clone(),
             f.amount.clone().unwrap_or_default(),
@@ -794,13 +824,22 @@ async fn create_disclosure(
     Json(body): Json<DisclosureBody>,
 ) -> ApiResult<Flow> {
     access.require(Tier::Admin)?;
-    let raw = parse_units(&body.amount, 6)
-        .ok_or_else(|| ApiErr::bad_request("amount must be a decimal with at most 6 places"))?;
     let flow = aggregate::get_flow(&s.pool, body.flow_id, false)
         .await?
         .ok_or_else(|| ApiErr::not_found("flow"))?;
-    let units: f64 = raw.parse().unwrap_or(0.0);
-    let usd = units / 1e6 * s.rates.current().rate(&flow.asset);
+    let token = tokens::get(&s.pool, &flow.asset_address)
+        .await?
+        .ok_or_else(|| ApiErr::not_found("asset"))?;
+    let decimals = token.decimals.unwrap_or(0) as usize;
+    let raw = parse_units(&body.amount, decimals).ok_or_else(|| {
+        ApiErr::bad_request(format!(
+            "amount must be a decimal with at most {decimals} places"
+        ))
+    })?;
+    let usd = token
+        .price
+        .and_then(|p| s.rates.current().price(p))
+        .map(|rate| enrich::usd_value(raw.parse().unwrap_or_default(), decimals as u32, rate));
     let applied = db::apply_disclosure(
         &s.pool,
         body.flow_id,

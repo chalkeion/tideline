@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Party } from "@tideline/sdk";
-import { PageHeader, Section, Tag, AttributionTag } from "@/components/ui";
+import { AssetName, PageHeader, Section, Tag, AttributionTag } from "@/components/ui";
 import { api, getNetwork } from "@/lib/api";
 import { categoryLabel, explorerTx, kindLabel, methodLabel, ms, usd, utc } from "@/lib/format";
 import { orNotFound } from "@/lib/guard";
@@ -51,10 +51,30 @@ export default async function FlowPage({ params }: { params: Promise<{ id: strin
 
   const facts: [string, React.ReactNode][] = [
     ["Type", kindLabel(flow.kind)],
-    ["Asset", flow.asset],
-    ["Amount", flow.amount ? `${flow.amount} ${flow.asset}` : "Shielded"],
-    ["Notional USD", usd(flow.usd_value)],
-    ["Size band", flow.size_tier ?? "Unknown while shielded"],
+    ["Asset", <AssetName key="asset" symbol={flow.asset} address={flow.asset_address} listed={flow.asset_listed} />],
+    ["Token contract", <span key="contract" className="break-all font-mono text-xs">{flow.asset_address}</span>],
+    [
+      "Amount",
+      flow.token_id !== null
+        ? `NFT #${flow.token_id}`
+        : flow.amount
+          ? `${flow.amount} ${flow.asset}`
+          : "Shielded",
+    ],
+    [
+      "Notional USD",
+      flow.visibility === "shielded"
+        ? "Shielded"
+        : flow.usd_value === null
+          ? flow.asset_listed
+            ? "Not yet priced"
+            : "Unpriced: unlisted token"
+          : usd(flow.usd_value),
+    ],
+    [
+      "Size band",
+      flow.size_tier ?? (flow.visibility === "shielded" ? "Unknown while shielded" : "None without a USD value"),
+    ],
     ["Visibility", flow.visibility],
     ["Settled", utc(flow.block_time)],
     ["Block", flow.block_number.toLocaleString("en-US")],

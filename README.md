@@ -2,9 +2,10 @@
 
 ## Overview
 
-Tideline is the attribution layer for stablecoin flow on [Arc](https://docs.arc.io), Circle's
-stablecoin-native L1. It ingests USDC, EURC, USYC, CCTP V2 and Gateway activity, collapses
-raw logs into economic flows, and ties each counterparty to a known entity with evidence.
+Tideline is the attribution layer for value flow on [Arc](https://docs.arc.io), Circle's
+stablecoin-native L1. It ingests every token transfer on the chain (ERC-20 and ERC-721)
+alongside CCTP V2 and Gateway activity, collapses raw logs into economic flows, and ties each
+counterparty to a known entity with evidence.
 
 It is built for a compliance officer's question, not for chart browsing:
 
@@ -19,6 +20,7 @@ The positioning behind this is in [docs/MOAT-STRATEGY.md](docs/MOAT-STRATEGY.md)
 | --- | --- |
 | **Attribution registry.** Entities, and per-address claims that each carry a method (`protocol_registry`, `self_attested`, `curated`, `heuristic`), a confidence and evidence. | `services/stream/src/db.rs`, `data/entities.seed.json` |
 | **Clustering.** A Gateway burn signed by a different key links signer and depositor; a first-party attribution on one propagates to the other as a lower-confidence heuristic label, with the linking tx as evidence. | `enrich.rs` (links), `db.rs::propagate_links` |
+| **Every asset, identified by address.** Any token that emits a transfer is discovered, its metadata read from chain and its flows stored in its own decimals. Only *listed* tokens (addresses Arc or the issuer publishes) own their symbol and carry a price; the rest are tracked by amount. A token named like a listed one is flagged, in the API, the UI and every narrative, because on Arc Mainnet several tokens call themselves USDC. | `tokens.rs`, `data/tokens.seed.json`, `/v1/assets` |
 | **Decode + enrich.** A CCTP burn is one `cctp_outbound` flow from its real originator (forwarder contracts are seen through), not three token transfers. Each flow gets a size band and a plain-language narrative. | `decode.rs`, `enrich.rs` |
 | **Privacy-model aware.** Arc confidential transfers hide amounts, not addresses. Shielded flows are stored with a null amount, still attributed by counterparty, counted separately, and never treated as zero volume. A disclosure API re-admits amounts revealed by a view-key holder. | `visibility` on flows, `POST /v1/disclosures`, `/coverage` |
 | **Falsifiable claim.** "X% of live volume attributed within 5 seconds of settlement", recomputed from stored flows on every request, with latency measured only on blocks produced while tip-following. | `aggregate.rs::coverage`, `/coverage` |
@@ -84,10 +86,18 @@ Both the service and the web app read the root `.env`.
   endpoint that rate-limits or bans the host does not stop ingestion. Endpoint URLs never
   reach the logs or the API, so a keyed URL is safe to use. On testnet the older
   `ARC_TESTNET_RPC_URL` is still read.
-- **Reference rates.** EURC is valued at the ECB euro reference rate and USYC at the fund's
-  published price report, refreshed hourly and applied when a flow is ingested.
-  `EURC_USD_RATE` and `USYC_USD_RATE` apply until a source answers; `LIVE_RATES=false` pins
-  them. `/v1/overview` reports each rate with its source and publication date.
+- **Tokens.** With `TRACK_ALL_TOKENS=true` (the default) the ingestor reads every `Transfer`
+  log on the chain, not only listed contracts. A new token's `name()`, `symbol()` and
+  `decimals()` are read once, in small batches (public endpoints rate-limit inside a
+  batch), and stored in `tokens`; a call that reverts is recorded as missing, any other
+  failure is retried. `TRACK_ALL_TOKENS=false` limits ingestion to listed tokens.
+- **Reference rates.** Listed tokens only. EURC is valued at the ECB euro reference rate,
+  USYC at the fund's published price report, and cirBTC and WETH at CoinGecko's bitcoin and
+  ether spot prices, all refreshed hourly and applied when a flow is ingested.
+  `EURC_USD_RATE` and `USYC_USD_RATE` apply until a source answers; cirBTC and WETH stay
+  unpriced until then. `LIVE_RATES=false` pins EURC and USYC and leaves cirBTC and WETH
+  unpriced. `/v1/overview` reports each rate with its source and date. Unlisted tokens are
+  never valued: no rate Tideline could defend exists for them.
 - **History.** A fresh database holds `BACKFILL_BLOCKS` of history (172800 is one day).
   Windowed responses carry a `scope` that says where history starts, and the web app says
   so whenever a window reaches back further than the data does.
@@ -116,7 +126,8 @@ curl -X POST localhost:8080/v1/attestations -H "Authorization: Bearer $TIDELINE_
 | Endpoint | Tier | |
 | --- | --- | --- |
 | `GET /v1/overview`, `/v1/coverage` | public | Aggregates and the headline claim. `?window_hours=` |
-| `GET /v1/flows`, `/v1/flows/:id` | public | Filters: `asset kind entity address visibility min_usd since_hours attributed before after limit` |
+| `GET /v1/flows`, `/v1/flows/:id` | public | Filters: `asset kind entity address visibility min_usd since_hours attributed before after limit`. `asset` is a token address, or the symbol of a listed token |
+| `GET /v1/assets`, `/v1/assets/:address` | public | Every listed token and every token that moved, with flows, amount moved, USD volume (listed only) and the most active addresses. `?window_hours=` |
 | `GET /v1/entities`, `/v1/entities/:slug`, `/v1/addresses/:address` | public | Evidence fields are licensed |
 | `GET /v1/compliance/report?entity=&window_hours=&format=csv` | licensed | The compliance question |
 | `GET /v1/flows/stream` | licensed | Server-sent events |

@@ -2,6 +2,8 @@
 
 use alloy_primitives::{address, Address, B256};
 
+use crate::tokens::PriceSource;
+
 /// A tracked stablecoin on Arc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
@@ -191,20 +193,27 @@ impl Contracts {
     }
 }
 
-/// Reference rates used to express non-USD assets as notional USD. The configured values
-/// are the fallback; `rates::LiveRates` replaces them with published ones while it can.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Reference rates used to express listed non-USD assets as notional USD. The configured
+/// EURC and USYC values are the fallback; `rates::LiveRates` replaces them with published
+/// ones while it can. Bitcoin and ether move too fast for a static fallback, so cirBTC and
+/// WETH stay unpriced until a spot source answers.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ReferenceRates {
     pub eurc_usd: f64,
     pub usyc_usd: f64,
+    pub btc_usd: Option<f64>,
+    pub eth_usd: Option<f64>,
 }
 
 impl ReferenceRates {
-    pub fn rate(&self, symbol: &str) -> f64 {
-        match symbol {
-            "EURC" => self.eurc_usd,
-            "USYC" => self.usyc_usd,
-            _ => 1.0,
+    /// USD per whole token for a price source; `None` while the rate is unknown.
+    pub fn price(&self, source: PriceSource) -> Option<f64> {
+        match source {
+            PriceSource::Usd => Some(1.0),
+            PriceSource::Eur => Some(self.eurc_usd),
+            PriceSource::Usyc => Some(self.usyc_usd),
+            PriceSource::Btc => self.btc_usd,
+            PriceSource::Eth => self.eth_usd,
         }
     }
 }
@@ -218,6 +227,8 @@ pub struct Config {
     pub port: u16,
     /// Run the chain ingestor alongside the API.
     pub ingest_enabled: bool,
+    /// Ingest transfers of every token on the network. Off: listed tokens only.
+    pub track_all_tokens: bool,
     /// Blocks to backfill behind the head on first start (no stored cursor).
     pub backfill_blocks: u64,
     /// Blocks to stay behind the head. Arc has deterministic finality, so 0 is safe.
@@ -291,6 +302,7 @@ impl Config {
             rpc_urls,
             port: env_parse("PORT", 8080),
             ingest_enabled: env_parse("INGEST_ENABLED", true),
+            track_all_tokens: env_parse("TRACK_ALL_TOKENS", true),
             backfill_blocks: env_parse("BACKFILL_BLOCKS", 600),
             confirmations: env_parse("CONFIRMATIONS", 0),
             max_chunk_blocks: env_parse("MAX_CHUNK_BLOCKS", 100).max(1),
@@ -298,6 +310,8 @@ impl Config {
             rates: ReferenceRates {
                 eurc_usd: env_parse("EURC_USD_RATE", 1.08),
                 usyc_usd: env_parse("USYC_USD_RATE", 1.10),
+                btc_usd: None,
+                eth_usd: None,
             },
             live_rates: env_parse("LIVE_RATES", true),
             admin_key: std::env::var("TIDELINE_ADMIN_KEY")

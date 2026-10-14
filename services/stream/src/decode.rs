@@ -7,6 +7,7 @@ use alloy_primitives::{b256, Address, B256, U256};
 
 use crate::config::Contracts;
 use crate::rpc::RawLog;
+use crate::tokens::Standard;
 
 /// `Transfer(address indexed from, address indexed to, uint256 value)`
 pub const TRANSFER: B256 =
@@ -56,11 +57,19 @@ pub fn watched_topics(confidential: Option<B256>) -> Vec<B256> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
+    /// An ERC-20 `Transfer`, from any contract on the network.
     Transfer {
         token: Address,
         from: Address,
         to: Address,
         value: U256,
+    },
+    /// An ERC-721 `Transfer`: the same topic0 with the token id indexed as well.
+    NftTransfer {
+        token: Address,
+        from: Address,
+        to: Address,
+        token_id: U256,
     },
     /// A native USDC movement, logged by Arc's system emitter at 18 decimals. Every ERC-20
     /// USDC `Transfer` has one of these as a twin; a plain native send has only this.
@@ -119,6 +128,19 @@ pub enum Event {
         source_depositor: B256,
         value: U256,
     },
+}
+
+impl Event {
+    /// The token contract a transfer moves, and its standard.
+    pub fn token(&self) -> Option<(Address, Standard)> {
+        match self {
+            Event::Transfer { token, .. } | Event::ShieldedTransfer { token, .. } => {
+                Some((*token, Standard::Erc20))
+            }
+            Event::NftTransfer { token, .. } => Some((*token, Standard::Erc721)),
+            _ => None,
+        }
+    }
 }
 
 /// A decoded event with its position on chain.
@@ -186,18 +208,26 @@ pub fn decode(
     let data: &[u8] = &log.data;
     let is_token = contracts.token(&log.address).is_some();
 
-    let event = if topic0 == TRANSFER && is_token {
+    let event = if topic0 == TRANSFER && log.address == contracts.native_usdc_emitter {
+        Event::NativeTransfer {
+            from: topic_address(topics, 1)?,
+            to: topic_address(topics, 2)?,
+            value: word_u256(data, 0)?,
+        }
+    } else if topic0 == TRANSFER && topics.len() == 3 {
+        // Every token on the network is tracked; the registry decides what it is.
         Event::Transfer {
             token: log.address,
             from: topic_address(topics, 1)?,
             to: topic_address(topics, 2)?,
             value: word_u256(data, 0)?,
         }
-    } else if topic0 == TRANSFER && log.address == contracts.native_usdc_emitter {
-        Event::NativeTransfer {
+    } else if topic0 == TRANSFER && topics.len() == 4 {
+        Event::NftTransfer {
+            token: log.address,
             from: topic_address(topics, 1)?,
             to: topic_address(topics, 2)?,
-            value: word_u256(data, 0)?,
+            token_id: U256::from_be_bytes(topics[3].0),
         }
     } else if Some(topic0) == confidential_topic && is_token {
         Event::ShieldedTransfer {
@@ -578,6 +608,45 @@ mod tests {
         assert_eq!(from, address!("59825bb2aa01018adf67aa95741d23cae307431a"));
         assert_eq!(to, address!("e72f8175ab0991dbb778f6de62009c5bf97c17f7"));
         assert_eq!(value, U256::from(10_068_033_162_188_713_984u128));
+    }
+
+    #[test]
+    fn decodes_transfers_from_any_token_and_nfts() {
+        let token = "0x52159c27e5da9a7643125ffab46053637c2a88de";
+        let log = transfer(
+            token,
+            "0x00000000000000000000000000000000000000a1",
+            "0x00000000000000000000000000000000000000b2",
+            42,
+            TX_A,
+            1,
+        );
+        let Event::Transfer {
+            token: t, value, ..
+        } = dec(&log)
+        else {
+            panic!("wrong variant")
+        };
+        assert_eq!(format!("{t:#x}"), token);
+        assert_eq!(value, U256::from(42u64));
+
+        // ERC-721: the token id is the fourth topic and data is empty.
+        let mut nft = log.clone();
+        nft.topics.push(B256::from(U256::from(7u64)));
+        nft.data = Bytes::new();
+        let Event::NftTransfer { token_id, .. } = dec(&nft) else {
+            panic!("wrong variant")
+        };
+        assert_eq!(token_id, U256::from(7u64));
+        assert_eq!(
+            dec(&nft).token().map(|(_, s)| s),
+            Some(crate::tokens::Standard::Erc721)
+        );
+
+        // Two topics is neither standard.
+        let mut odd = log;
+        odd.topics.truncate(2);
+        assert!(decode(&odd, &Contracts::arc_testnet(), None).is_none());
     }
 
     #[test]

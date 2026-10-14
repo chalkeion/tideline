@@ -252,7 +252,7 @@ pub fn verify_attestation(entity_slug: &str, address: &str, signature: &str) -> 
     Ok(())
 }
 
-const FLOW_COLUMNS: usize = 15;
+const FLOW_COLUMNS: usize = 17;
 
 /// Insert flows idempotently; returns the ids of rows that were new.
 pub async fn insert_flows(
@@ -264,9 +264,9 @@ pub async fn insert_flows(
     // Stay under Postgres' 65535 bind-parameter limit.
     for chunk in flows.chunks(65_000 / FLOW_COLUMNS) {
         let mut qb: QueryBuilder<Postgres> = QueryBuilder::new(
-            "INSERT INTO flows (tx_hash, log_index, block_number, block_time, live, asset, kind,
-                 from_address, to_address, amount, usd_value, visibility, src_domain, dst_domain,
-                 details) ",
+            "INSERT INTO flows (tx_hash, log_index, block_number, block_time, live, asset,
+                 asset_address, token_id, kind, from_address, to_address, amount, usd_value,
+                 visibility, src_domain, dst_domain, details) ",
         );
         qb.push_values(chunk, |mut b, (f, block_time)| {
             b.push_bind(&f.tx_hash)
@@ -276,7 +276,10 @@ pub async fn insert_flows(
                 .push_bind_unseparated(*block_time as f64)
                 .push_unseparated(")")
                 .push_bind(f.block_number > live_after_block)
-                .push_bind(f.asset)
+                .push_bind(&f.asset)
+                .push_bind(&f.asset_address)
+                .push_bind(f.token_id.map(|id| id.to_string()))
+                .push_unseparated("::numeric")
                 .push_bind(f.kind)
                 .push_bind(&f.from_address)
                 .push_bind(&f.to_address)
@@ -343,7 +346,7 @@ pub async fn apply_disclosure(
     pool: &PgPool,
     flow_id: i64,
     amount_raw: &str,
-    usd_value: f64,
+    usd_value: Option<f64>,
     disclosed_by: &str,
     proof: &str,
 ) -> sqlx::Result<bool> {

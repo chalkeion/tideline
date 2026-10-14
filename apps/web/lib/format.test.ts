@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { isEvmAddress, ms, rateLabel, shortAddress, spanLabel, usd, utc, windowLabel } from "./format";
+import {
+  isEvmAddress,
+  ms,
+  rateLabel,
+  shortAddress,
+  spanLabel,
+  tokenAmount,
+  tokenId,
+  usd,
+  utc,
+  windowLabel,
+} from "./format";
 
 describe("format", () => {
   it("formats USD across magnitudes and marks shielded amounts", () => {
@@ -47,5 +58,20 @@ describe("format", () => {
   it("recognises EVM addresses only", () => {
     expect(isEvmAddress("0x631fdaafe9ff675bf7a122013d1555513363dcc7")).toBe(true);
     expect(isEvmAddress("0x1234")).toBe(false);
+  });
+});
+
+describe("token amounts", () => {
+  it("compacts large amounts and keeps small ones readable", () => {
+    expect(tokenAmount("3405749478.8527617")).toBe("3.41B");
+    expect(tokenAmount("12496.558072935399")).toBe("12,496.5581");
+    expect(tokenAmount("0.0000123456")).toBe("0.0000123");
+    expect(tokenAmount("0")).toBe("0");
+    expect(tokenAmount(null)).toBe("Shielded");
+  });
+
+  it("shortens long NFT ids", () => {
+    expect(tokenId("1234")).toBe("1234");
+    expect(tokenId("115792089237316195423570985008687907853269984665640564039457")).toBe("115792…9457");
   });
 });

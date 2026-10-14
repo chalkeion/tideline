@@ -2,7 +2,9 @@
 
 /*
  * Tokens. One neutral family, one accent, one radius (2px) across the app.
- * The three series colours are a validated categorical palette, fixed per asset.
+ * The five series colours are a validated categorical palette, fixed per listed asset in
+ * this order. Light-mode cirBTC, USYC and WETH sit under 3:1 on the surface, so the chart
+ * always carries its legend and the asset table beside it.
  */
 :root {
   --page: #f9f9f7;
@@ -18,6 +20,8 @@
   --series-usdc: #2a78d6;
   --series-eurc: #eb6834;
   --series-usyc: #1baf7a;
+  --series-cirbtc: #eda100;
+  --series-weth: #e87ba4;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +39,8 @@
     --series-usdc: #3987e5;
     --series-eurc: #d95926;
     --series-usyc: #199e70;
+    --series-cirbtc: #c98500;
+    --series-weth: #d55181;
   }
 }
 

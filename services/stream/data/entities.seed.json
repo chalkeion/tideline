@@ -4,7 +4,7 @@
       "slug": "circle",
       "name": "Circle",
       "category": "issuer",
-      "description": "Issuer of USDC and EURC; operator of CCTP, Gateway, StableFX and the USYC tokenized money market fund on Arc.",
+      "description": "Issuer of USDC, EURC and cirBTC; operator of CCTP, Gateway, StableFX and the USYC tokenized money market fund on Arc.",
       "website": "https://www.circle.com",
       "source": "Arc contract addresses (docs.arc.io)",
       "addresses": [
@@ -21,6 +21,7 @@
         { "network": "mainnet", "address": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE", "label": "Gateway Wallet" },
         { "network": "mainnet", "address": "0x2222222d7164433c4C09B0b0D809a9b52C04C205", "label": "Gateway Minter" },
         { "network": "mainnet", "address": "0xe2E5F173576B513d994073CCbDaCBE027d43DFe6", "label": "StableFX Escrow" },
+        { "network": "mainnet", "address": "0x171A4217b86A807A64eB94757Db6849fb4bDbAA0", "label": "cirBTC token" },
         { "network": "testnet", "address": "0x3600000000000000000000000000000000000000", "label": "USDC token" },
         { "network": "testnet", "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", "label": "EURC token" },
         { "network": "testnet", "address": "0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C", "label": "USYC token" },
@@ -33,7 +34,8 @@
         { "network": "testnet", "address": "0x63753E722bd2C2A5DF6EE19C5106662208B81077", "label": "CCTP CrossChainTokenService" },
         { "network": "testnet", "address": "0x0077777d7EBA4688BDeF3E311b846F25870A19B9", "label": "Gateway Wallet" },
         { "network": "testnet", "address": "0x0022222ABE238Cc2C7Bb1f21003F0a260052475B", "label": "Gateway Minter" },
-        { "network": "testnet", "address": "0xd68256f4D69C6BbEcB873D8588AE0Dc6B8E22E10", "label": "StableFX Escrow" }
+        { "network": "testnet", "address": "0xd68256f4D69C6BbEcB873D8588AE0Dc6B8E22E10", "label": "StableFX Escrow" },
+        { "network": "testnet", "address": "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF", "label": "cirBTC token" }
       ]
     },
     { "slug": "blackrock", "name": "BlackRock", "category": "asset_manager", "source": "Circle, \"Introducing Arc\" — launch partner list", "addresses": [] },
