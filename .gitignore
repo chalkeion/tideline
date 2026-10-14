@@ -24,6 +24,8 @@ pnpm-debug.log*
 
 # Testing / coverage
 coverage/
+# The /coverage route is source, not a test report.
+!apps/web/app/coverage/
 
 # Editor / OS
 .DS_Store

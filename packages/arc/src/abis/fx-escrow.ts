@@ -1,4 +1,5 @@
-// TODO: Fetch real ABI from
-// https://testnet.arcscan.app/address/0x867650F5eAe8df91445971f14d89fd84F0C9a9f8?tab=contract_abi
-// and paste here.
+/**
+ * StableFX escrow. Tideline classifies its flows from the token transfers in and out of
+ * the escrow address, so no escrow events are decoded and no ABI is needed yet.
+ */
 export const FX_ESCROW_ABI = [] as const

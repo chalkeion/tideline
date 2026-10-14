@@ -6,7 +6,7 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn health_returns_ok() {
-    let app = api::app();
+    let app = api::health_router();
 
     let response = app
         .oneshot(

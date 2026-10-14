@@ -1,22 +1,7 @@
 # Migrations
 
-SQL migrations for `arc-stablecoin-stream`, applied with the [`sqlx`](https://github.com/launchbadge/sqlx) CLI.
+SQL migrations for `arc-stablecoin-stream`. They are embedded in the binary with
+`sqlx::migrate!` and applied automatically on startup, so there is no separate step.
 
-## Usage
-
-```bash
-# install once
-cargo install sqlx-cli --no-default-features --features rustls,postgres
-
-# create a new migration
-sqlx migrate add <name>
-
-# apply pending migrations (uses DATABASE_URL)
-sqlx migrate run
-
-# revert the last migration
-sqlx migrate revert
-```
-
-`DATABASE_URL` is read from the environment (see root `.env.example`). No migrations
-exist yet at Week 0.
+Add a migration by creating the next numbered file here (`0002_<name>.sql`). Never edit a
+migration that has been applied anywhere: sqlx checksums them.
