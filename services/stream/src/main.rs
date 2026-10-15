@@ -56,7 +56,8 @@ async fn serve(cfg: Arc<Config>, pool: sqlx::PgPool) -> anyhow::Result<()> {
     let progress = Arc::new(Progress::new());
     let (new_flows, _) = broadcast::channel(256);
 
-    let rates = Arc::new(LiveRates::new(cfg.rates)?);
+    let rates =
+        Arc::new(LiveRates::new(cfg.rates)?.with_coingecko_key(cfg.coingecko_api_key.clone()));
     if cfg.live_rates {
         // One fetch before ingest starts, so the first flows are valued at published rates.
         rates.refresh().await;

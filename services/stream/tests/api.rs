@@ -196,6 +196,9 @@ async fn attribution_licensing_and_disclosure_end_to_end() {
         port: 0,
         ingest_enabled: false,
         track_all_tokens: true,
+        // Fresh numbers after every mutation; the cache has its own tests.
+        cache_seconds: 0,
+        coingecko_api_key: None,
         retention_hours: None,
         backfill_blocks: 0,
         confirmations: 0,

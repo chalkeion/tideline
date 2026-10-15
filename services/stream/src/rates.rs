@@ -19,8 +19,12 @@ const ECB_URL: &str = "https://api.frankfurter.dev/v1/latest?base=EUR&symbols=US
 const USYC_URL: &str = "https://usyc.hashnote.com/api/price-reports";
 const SPOT_URL: &str =
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd&include_last_updated_at=true";
+/// Fallback when CoinGecko refuses (its keyless API rate-limits shared cloud IPs).
+const COINBASE_BTC_URL: &str = "https://api.coinbase.com/v2/prices/BTC-USD/spot";
+const COINBASE_ETH_URL: &str = "https://api.coinbase.com/v2/prices/ETH-USD/spot";
 const ECB_SOURCE: &str = "ECB euro reference rate";
 const SPOT_SOURCE: &str = "CoinGecko spot price";
+const COINBASE_SOURCE: &str = "Coinbase spot price";
 const USYC_SOURCE: &str = "USYC fund price report";
 const STATIC_SOURCE: &str = "configured static rate";
 
@@ -63,6 +67,8 @@ struct State {
 pub struct LiveRates {
     state: RwLock<State>,
     http: reqwest::Client,
+    /// A free CoinGecko demo key, sent as `x-cg-demo-api-key`. Optional.
+    coingecko_key: Option<String>,
 }
 
 /// `(EUR/USD, publication date)` from a Frankfurter "latest" response.
@@ -103,6 +109,16 @@ fn parse_spot(body: &Value) -> Option<(f64, f64, String)> {
         .then_some((btc, eth, at))
 }
 
+/// A Coinbase spot response for `base`, if the price is within `range`.
+fn parse_coinbase(body: &Value, base: &str, range: std::ops::Range<f64>) -> Option<f64> {
+    let data = &body["data"];
+    if data["base"].as_str()? != base || data["currency"].as_str()? != "USD" {
+        return None;
+    }
+    let price: f64 = data["amount"].as_str()?.parse().ok()?;
+    range.contains(&price).then_some(price)
+}
+
 impl LiveRates {
     /// Starts on the configured rates; nothing is fetched until [`Self::refresh`].
     pub fn new(configured: ReferenceRates) -> anyhow::Result<Self> {
@@ -118,7 +134,13 @@ impl LiveRates {
                 .timeout(Duration::from_secs(15))
                 .user_agent(concat!("tideline/", env!("CARGO_PKG_VERSION")))
                 .build()?,
+            coingecko_key: None,
         })
+    }
+
+    pub fn with_coingecko_key(mut self, key: Option<String>) -> Self {
+        self.coingecko_key = key.filter(|k| !k.trim().is_empty());
+        self
     }
 
     pub fn current(&self) -> ReferenceRates {
@@ -146,26 +168,57 @@ impl LiveRates {
     }
 
     async fn fetch(&self, url: &str) -> Result<Value, reqwest::Error> {
-        self.http
-            .get(url)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
+        self.fetch_with(url, None).await
+    }
+
+    async fn fetch_with(
+        &self,
+        url: &str,
+        header: Option<(&str, &str)>,
+    ) -> Result<Value, reqwest::Error> {
+        let mut request = self.http.get(url);
+        if let Some((name, value)) = header {
+            request = request.header(name, value);
+        }
+        request.send().await?.error_for_status()?.json().await
+    }
+
+    /// `(BTC/USD, ETH/USD, as of, source)`: CoinGecko first, Coinbase when it refuses.
+    async fn fetch_spot(&self) -> Result<(f64, f64, String, &'static str), String> {
+        let key = self
+            .coingecko_key
+            .as_deref()
+            .map(|k| ("x-cg-demo-api-key", k));
+        let coingecko = match self.fetch_with(SPOT_URL, key).await {
+            Ok(body) => match parse_spot(&body) {
+                Some((btc, eth, at)) => return Ok((btc, eth, at, SPOT_SOURCE)),
+                None => "unexpected response".to_string(),
+            },
+            Err(e) => e.to_string(),
+        };
+        let (btc, eth) = tokio::join!(self.fetch(COINBASE_BTC_URL), self.fetch(COINBASE_ETH_URL));
+        let btc = btc
+            .ok()
+            .and_then(|b| parse_coinbase(&b, "BTC", 1_000.0..10_000_000.0));
+        let eth = eth
+            .ok()
+            .and_then(|b| parse_coinbase(&b, "ETH", 10.0..1_000_000.0));
+        match (btc, eth) {
+            (Some(btc), Some(eth)) => {
+                let at = Utc::now().format("%Y-%m-%d %H:%M UTC").to_string();
+                Ok((btc, eth, at, COINBASE_SOURCE))
+            }
+            _ => Err(format!(
+                "CoinGecko: {coingecko}; Coinbase: no usable answer"
+            )),
+        }
     }
 
     /// Fetch every source once. A source that fails or answers nonsense leaves its rate as
     /// it was.
     pub async fn refresh(&self) {
-        let (ecb, usyc, spot) = tokio::join!(
-            self.fetch(ECB_URL),
-            self.fetch(USYC_URL),
-            self.fetch(SPOT_URL)
-        );
-        let spot = spot
-            .map_err(|e| e.to_string())
-            .and_then(|body| parse_spot(&body).ok_or_else(|| "unexpected response".to_string()));
+        let (ecb, usyc, spot) =
+            tokio::join!(self.fetch(ECB_URL), self.fetch(USYC_URL), self.fetch_spot());
         let ecb = ecb
             .map_err(|e| e.to_string())
             .and_then(|body| parse_ecb(&body).ok_or_else(|| "unexpected response".to_string()));
@@ -195,11 +248,11 @@ impl LiveRates {
             Err(e) => tracing::warn!("USYC reference rate not refreshed: {e}"),
         }
         match spot {
-            Ok((btc, eth, at)) => {
+            Ok((btc, eth, at, source)) => {
                 state.rates.btc_usd = Some(btc);
                 state.rates.eth_usd = Some(eth);
                 state.spot = Provenance {
-                    source: SPOT_SOURCE,
+                    source,
                     as_of: Some(at),
                 };
             }
@@ -247,6 +300,21 @@ mod tests {
             "ethereum": { "usd": 2461.28 },
         });
         assert_eq!(parse_spot(&broken), None);
+    }
+
+    #[test]
+    fn coinbase_spot_is_read_and_checked_against_the_asked_pair() {
+        let btc = json!({ "data": { "amount": "82404.12", "base": "BTC", "currency": "USD" } });
+        assert_eq!(
+            parse_coinbase(&btc, "BTC", 1_000.0..10_000_000.0),
+            Some(82404.12)
+        );
+        assert_eq!(parse_coinbase(&btc, "ETH", 10.0..1_000_000.0), None);
+        let nonsense = json!({ "data": { "amount": "0.01", "base": "BTC", "currency": "USD" } });
+        assert_eq!(
+            parse_coinbase(&nonsense, "BTC", 1_000.0..10_000_000.0),
+            None
+        );
     }
 
     #[test]

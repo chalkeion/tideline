@@ -229,6 +229,12 @@ pub struct Config {
     pub ingest_enabled: bool,
     /// Ingest transfers of every token on the network. Off: listed tokens only.
     pub track_all_tokens: bool,
+    /// Free CoinGecko demo key for the cirBTC and WETH spot prices. Without it the
+    /// keyless API is tried, then Coinbase.
+    pub coingecko_api_key: Option<String>,
+    /// Seconds an aggregate response (overview, coverage, assets) is served from memory
+    /// before it is refreshed in the background. 0 disables the cache.
+    pub cache_seconds: u64,
     /// Delete flows older than this many hours, checked hourly. `None`: keep everything.
     /// With every token tracked, Arc Mainnet adds about 1 GB of flows a day.
     pub retention_hours: Option<u32>,
@@ -306,6 +312,10 @@ impl Config {
             port: env_parse("PORT", 8080),
             ingest_enabled: env_parse("INGEST_ENABLED", true),
             track_all_tokens: env_parse("TRACK_ALL_TOKENS", true),
+            cache_seconds: env_parse("CACHE_SECONDS", 30),
+            coingecko_api_key: std::env::var("COINGECKO_API_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty()),
             // RETENTION_HOURS wins; RETENTION_DAYS is the coarse form.
             retention_hours: Some(env_parse("RETENTION_HOURS", 0))
                 .filter(|h| *h > 0)

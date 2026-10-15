@@ -33,3 +33,6 @@ coverage/
 .vscode/
 *.swp
 Thumbs.db
+
+# Registry dumps from scripts/backup-registry.sh
+backups/

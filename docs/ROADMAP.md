@@ -84,7 +84,7 @@ Analytics, and our own samples of live RPC data.
 
 ### TODO
 
-- [ ] Decide the monthly budget ceiling: $0, ~$10, or ~$110 with Solana.
+- [x] Monthly budget: **$0** (decided 2026-10-15). Phases 1-2 only; Solana waits for budget.
 - [ ] Get an Envio HyperSync API token (envio.dev).
 - [ ] Columnar ledger writer (Parquet/DuckDB) and an R2 uploader; read path through DuckDB.
 - [ ] Chain registry config; generic EVM adapter; start with Base, Arbitrum, OP Mainnet,

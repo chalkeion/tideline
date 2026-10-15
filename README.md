@@ -97,7 +97,11 @@ Both the service and the web app read the root `.env`.
   `EURC_USD_RATE` and `USYC_USD_RATE` apply until a source answers; cirBTC and WETH stay
   unpriced until then. `LIVE_RATES=false` pins EURC and USYC and leaves cirBTC and WETH
   unpriced. `/v1/overview` reports each rate with its source and date. Unlisted tokens are
-  never valued: no rate Tideline could defend exists for them.
+  never valued: no rate Tideline could defend exists for them. CoinGecko's keyless API
+  rate-limits shared cloud IPs, so set a free `COINGECKO_API_KEY`; Coinbase is the fallback.
+- **Aggregates are cached.** Overview, coverage and the asset list scan every flow in a
+  window. They are served from memory for `CACHE_SECONDS` (30), then refreshed in the
+  background while the stale copy is served; ingest progress and rates are always live.
 - **History.** A fresh database holds `BACKFILL_BLOCKS` of history (172800 is one day).
   Windowed responses carry a `scope` that says where history starts, and the web app says
   so whenever a window reaches back further than the data does.
@@ -180,6 +184,18 @@ service's Environment tab.
    curl -X POST https://<service>/v1/keys -H "Authorization: Bearer $TIDELINE_ADMIN_KEY" \
      -H 'content-type: application/json' -d '{"name":"web","tier":"licensed"}'
    ```
+
+**Back up the registry.** Free Render Postgres has no backups and is deleted 30 days after
+creation (plus a 14-day grace period). The registry (entities, attributions and evidence,
+links, keys, the token registry) is what the chain cannot rebuild:
+
+```bash
+scripts/backup-registry.sh "<external database url>"   # writes backups/tideline-registry-<time>.dump
+pg_restore --no-owner --no-privileges -d "<new database url>" backups/<file>
+```
+
+Flows are left out; on the restored database set `BACKFILL_BLOCKS` to rebuild the window
+you need (Arc blocks are about 0.5 s, so 86400 is 12 hours).
 
 Run a single instance per network: ingest progress and rate limits are held in memory.
 Without Railway, any container host works:

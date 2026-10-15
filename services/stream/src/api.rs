@@ -27,6 +27,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::aggregate::{self, FlowFilter};
+use crate::cache::ResponseCache;
 use crate::config::Config;
 use crate::db::{self, NewLabel};
 use crate::enrich;
@@ -36,6 +37,9 @@ use crate::schema::*;
 use crate::tokens;
 
 const PUBLIC_HISTORY_HOURS: i32 = 24;
+/// Past this age a cached aggregate is recomputed while the caller waits, so an idle
+/// service never serves data that is hours old.
+const CACHE_MAX_STALE_SECONDS: u64 = 10 * 60;
 const REPORT_MAX_FLOWS: i64 = 5000;
 
 #[derive(Clone)]
@@ -46,6 +50,8 @@ pub struct AppState {
     pub new_flows: broadcast::Sender<Vec<i64>>,
     pub rates: Arc<LiveRates>,
     limiter: Arc<Mutex<HashMap<String, (Instant, u32)>>>,
+    /// Expensive aggregates, served stale-while-revalidate (see `cache`).
+    cache: Arc<ResponseCache>,
 }
 
 impl AppState {
@@ -60,6 +66,10 @@ impl AppState {
         new_flows: broadcast::Sender<Vec<i64>>,
         rates: Arc<LiveRates>,
     ) -> Self {
+        let cache = ResponseCache::new(
+            Duration::from_secs(cfg.cache_seconds),
+            Duration::from_secs(CACHE_MAX_STALE_SECONDS),
+        );
         Self {
             pool,
             cfg,
@@ -67,6 +77,7 @@ impl AppState {
             new_flows,
             rates,
             limiter: Arc::default(),
+            cache,
         }
     }
 }
@@ -134,6 +145,22 @@ impl Access {
 }
 
 pub struct ApiErr(StatusCode, &'static str, String);
+
+impl std::fmt::Display for ApiErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.1, self.2)
+    }
+}
+
+fn to_json<T: serde::Serialize>(value: T) -> Result<Value, ApiErr> {
+    serde_json::to_value(value).map_err(|e| {
+        ApiErr(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "internal",
+            format!("serialising response: {e}"),
+        )
+    })
+}
 
 impl ApiErr {
     fn bad_request(message: impl Into<String>) -> Self {
@@ -328,39 +355,60 @@ async fn network(State(s): State<AppState>) -> Json<NetworkInfo> {
     })
 }
 
+/// The overview is an `Overview`; it is served from the aggregate cache, with ingest
+/// progress and reference rates filled in live on every response. `generated_at` says
+/// when the aggregates were computed.
 async fn overview(
     State(s): State<AppState>,
     Extension(access): Extension<Access>,
     Query(q): Query<WindowQuery>,
-) -> ApiResult<Overview> {
+) -> ApiResult<Value> {
     let hours = q.hours(access);
-    let parts = aggregate::overview(&s.pool, hours).await?;
-    let coverage = aggregate::coverage(&s.pool, hours, s.shielding_live()).await?;
-    Ok(Json(Overview {
-        window_hours: hours,
-        generated_at: now(),
-        ingest: s.progress.snapshot(),
-        flows: parts.flows,
-        volume_usd: parts.volume_usd,
-        active_addresses: parts.active_addresses,
-        assets: parts.assets,
-        asset_count: parts.asset_count,
-        kinds: parts.kinds,
-        corridors: parts.corridors,
-        top_entities: parts.top_entities,
-        series: parts.series,
-        series_bucket_minutes: parts.series_bucket_minutes,
-        coverage,
-        reference_rates: s.rates.info(),
-    }))
+    let state = s.clone();
+    let mut value = s
+        .cache
+        .get(&format!("overview:{hours}"), move || async move {
+            let parts = aggregate::overview(&state.pool, hours).await?;
+            let coverage = aggregate::coverage(&state.pool, hours, state.shielding_live()).await?;
+            to_json(Overview {
+                window_hours: hours,
+                generated_at: now(),
+                ingest: state.progress.snapshot(),
+                flows: parts.flows,
+                volume_usd: parts.volume_usd,
+                active_addresses: parts.active_addresses,
+                assets: parts.assets,
+                asset_count: parts.asset_count,
+                kinds: parts.kinds,
+                corridors: parts.corridors,
+                top_entities: parts.top_entities,
+                series: parts.series,
+                series_bucket_minutes: parts.series_bucket_minutes,
+                coverage,
+                reference_rates: state.rates.info(),
+            })
+        })
+        .await?;
+    value["ingest"] = to_json(s.progress.snapshot())?;
+    value["reference_rates"] = to_json(s.rates.info())?;
+    Ok(Json(value))
 }
 
+/// An `AssetList`, from the aggregate cache.
 async fn list_assets(
     State(s): State<AppState>,
     Extension(access): Extension<Access>,
     Query(q): Query<WindowQuery>,
-) -> ApiResult<AssetList> {
-    Ok(Json(aggregate::assets(&s.pool, q.hours(access)).await?))
+) -> ApiResult<Value> {
+    let hours = q.hours(access);
+    let pool = s.pool.clone();
+    let value = s
+        .cache
+        .get(&format!("assets:{hours}"), move || async move {
+            to_json(aggregate::assets(&pool, hours).await?)
+        })
+        .await?;
+    Ok(Json(value))
 }
 
 async fn asset_profile(
@@ -377,13 +425,21 @@ async fn asset_profile(
         .ok_or_else(|| ApiErr::not_found("asset"))
 }
 
+/// A `Coverage`, from the aggregate cache.
 async fn coverage(
     State(s): State<AppState>,
     Extension(access): Extension<Access>,
     Query(q): Query<WindowQuery>,
-) -> ApiResult<Coverage> {
-    let coverage = aggregate::coverage(&s.pool, q.hours(access), s.shielding_live()).await?;
-    Ok(Json(coverage))
+) -> ApiResult<Value> {
+    let hours = q.hours(access);
+    let state = s.clone();
+    let value = s
+        .cache
+        .get(&format!("coverage:{hours}"), move || async move {
+            to_json(aggregate::coverage(&state.pool, hours, state.shielding_live()).await?)
+        })
+        .await?;
+    Ok(Json(value))
 }
 
 async fn list_flows(
