@@ -138,7 +138,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
           Apply filters
         </button>
         {filtered ? (
-          <Link href="/flows" className="h-9 py-2 text-sm text-accent-ink underline underline-offset-2">
+          <Link prefetch={false} href="/flows" className="h-9 py-2 text-sm text-accent-ink underline underline-offset-2">
             Clear
           </Link>
         ) : null}
@@ -159,6 +159,7 @@ export default async function FlowsPage({ searchParams }: { searchParams: Promis
           </div>
           {page.next_cursor ? (
             <Link
+              prefetch={false}
               href={`/flows?${older}`}
               className="self-start rounded-sm border border-line-strong px-3 py-1.5 text-sm hover:bg-accent-wash hover:text-accent-ink active:translate-y-px"
             >

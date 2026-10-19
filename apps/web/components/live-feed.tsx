@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Flow } from "@tideline/sdk";
 import { kindLabel, tokenAmount, tokenId, usd, utcTime } from "@/lib/format";
 
-const POLL_MS = 4000;
+const POLL_MS = 10_000;
 const MAX_ROWS = 14;
 
 /** Tails newly attributed flows by polling for ids above the last one seen. */
@@ -32,10 +32,29 @@ export function LiveFeed({ initial }: { initial: Flow[] }) {
         if (!cancelled) setError(true);
       }
     };
-    const timer = setInterval(tick, POLL_MS);
+    // Every poll is a Vercel function call, so only poll while the tab is visible.
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      if (timer === undefined) timer = setInterval(tick, POLL_MS);
+    };
+    const stop = () => {
+      clearInterval(timer);
+      timer = undefined;
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        void tick();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
@@ -60,6 +79,7 @@ export function LiveFeed({ initial }: { initial: Flow[] }) {
           >
             <span className="font-mono text-xs text-ink-3">{utcTime(flow.block_time)}</span>
             <Link
+              prefetch={false}
               href={`/flows/${flow.id}`}
               className="truncate text-sm underline-offset-2 hover:text-accent-ink hover:underline"
               title={flow.narrative}

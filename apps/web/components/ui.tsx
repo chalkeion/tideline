@@ -9,6 +9,7 @@ import { methodLabel, shortAddress, spanLabel, utc, windowLabel } from "@/lib/fo
 export function ArrowLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <Link
+      prefetch={false}
       href={href}
       className="group inline-flex items-center gap-3 rounded-full border border-line-strong bg-ink/[0.04] py-1.5 pl-4 pr-1.5 text-sm transition-[background-color,transform] duration-500 ease-tide hover:bg-ink/[0.07] active:scale-[0.98]"
     >
@@ -137,6 +138,7 @@ export function AssetName({
 }) {
   return (
     <Link
+      prefetch={false}
       href={`/assets/${address}`}
       title={listed ? `${symbol} ${address}` : `Unlisted token ${address}`}
       className="underline-offset-2 hover:text-accent-ink hover:underline"
@@ -152,6 +154,7 @@ export function PartyCell({ party }: { party: Party }) {
   const isAddress = /^0x[0-9a-f]{40}$/.test(party.address);
   const address = isAddress ? (
     <Link
+      prefetch={false}
       href={`/address/${party.address}`}
       className="font-mono text-xs text-ink-2 underline-offset-2 hover:text-accent-ink hover:underline"
       title={party.address}
@@ -167,6 +170,7 @@ export function PartyCell({ party }: { party: Party }) {
   return (
     <span className="flex flex-col gap-0.5">
       <Link
+        prefetch={false}
         href={`/entities/${party.entity.slug}`}
         className="text-sm font-medium underline-offset-2 hover:text-accent-ink hover:underline"
         title={party.method ? `${methodLabel(party.method)}, confidence ${party.confidence?.toFixed(2)}` : undefined}
@@ -183,6 +187,7 @@ export function WindowTabs({ basePath, current }: { basePath: string; current: n
     <nav aria-label="Time window" className="flex gap-0.5 rounded-full border border-line-strong bg-shell p-1 text-xs">
       {[1, 24, 168].map((hours) => (
         <Link
+          prefetch={false}
           key={hours}
           href={`${basePath}?window=${hours}`}
           aria-current={hours === current ? "page" : undefined}

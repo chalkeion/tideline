@@ -6,7 +6,13 @@ import { api, getNetwork } from "@/lib/api";
 import { categoryLabel, explorerTx, kindLabel, methodLabel, ms, usd, utc } from "@/lib/format";
 import { orNotFound } from "@/lib/guard";
 
-export const dynamic = "force-dynamic";
+// A flow never changes once attributed, so serve it from the CDN.
+export const revalidate = 300;
+
+// No pages at build time (the API may be asleep); each id renders on first request, then caches.
+export function generateStaticParams() {
+  return [];
+}
 export const metadata = { title: "Flow" };
 
 function PartyPanel({ side, party }: { side: string; party: Party }) {
@@ -16,7 +22,7 @@ function PartyPanel({ side, party }: { side: string; party: Party }) {
       <p className="text-xs text-ink-2">{side}</p>
       {party.entity ? (
         <>
-          <Link href={`/entities/${party.entity.slug}`} className="text-lg font-semibold hover:text-accent-ink hover:underline">
+          <Link prefetch={false} href={`/entities/${party.entity.slug}`} className="text-lg font-semibold hover:text-accent-ink hover:underline">
             {party.entity.name}
           </Link>
           <p className="text-sm text-ink-2">
@@ -34,7 +40,7 @@ function PartyPanel({ side, party }: { side: string; party: Party }) {
         <p className="text-lg font-semibold text-ink-2">Unattributed</p>
       )}
       {isAddress ? (
-        <Link href={`/address/${party.address}`} className="break-all font-mono text-xs text-accent-ink underline underline-offset-2">
+        <Link prefetch={false} href={`/address/${party.address}`} className="break-all font-mono text-xs text-accent-ink underline underline-offset-2">
           {party.address}
         </Link>
       ) : (

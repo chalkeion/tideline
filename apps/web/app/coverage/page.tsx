@@ -174,7 +174,7 @@ export default async function CoveragePage({
               <tr key={row.address}>
                 <td>
                   {/^0x[0-9a-f]{40}$/.test(row.address) ? (
-                    <Link href={`/address/${row.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
+                    <Link prefetch={false} href={`/address/${row.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
                       {row.address}
                     </Link>
                   ) : (

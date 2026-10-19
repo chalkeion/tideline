@@ -4,11 +4,14 @@ import { TidelineClient } from "@tideline/sdk";
 
 export const API_URL = process.env.TIDELINE_API_URL ?? "http://localhost:8080";
 
-/** Server-side client. The license key never reaches the browser. */
+/**
+ * Server-side client. The license key never reaches the browser. It sets no fetch cache mode:
+ * pages that export `revalidate` cache their upstream calls for that long, and everything else
+ * (searchParams pages, route handlers) is uncached by default.
+ */
 export const api = new TidelineClient({
   baseUrl: API_URL,
   apiKey: process.env.TIDELINE_API_KEY || undefined,
-  fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
 });
 
 /** The Arc network the service indexes, fetched once per request. */

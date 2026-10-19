@@ -42,6 +42,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <header className="sticky top-3 z-20 px-3 md:px-6">
           <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-5 gap-y-2 rounded-[1.75rem] border border-line-strong bg-page/70 px-3 py-2 shadow-[0_20px_50px_-30px_var(--shadow)] backdrop-blur-xl md:flex-nowrap md:rounded-full md:pl-4">
             <Link
+              prefetch={false}
               href="/"
               aria-label="Tideline home"
               className="flex items-center gap-3 rounded-full transition-opacity duration-500 ease-tide hover:opacity-80"

@@ -89,6 +89,7 @@ export default async function EntityPage({
                 <FlowTable flows={profile.recent_flows} />
                 {profile.flows > profile.recent_flows.length ? (
                   <Link
+                    prefetch={false}
                     href={`/flows?entity=${slug}`}
                     className="self-start text-sm text-accent-ink underline underline-offset-2"
                   >

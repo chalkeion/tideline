@@ -7,7 +7,7 @@ export default function NotFound() {
       <p className="mt-2 text-sm leading-relaxed text-ink-2">
         Tideline has no record matching that address, entity or flow.
       </p>
-      <Link href="/flows" className="mt-4 inline-block text-sm text-accent-ink underline underline-offset-2">
+      <Link prefetch={false} href="/flows" className="mt-4 inline-block text-sm text-accent-ink underline underline-offset-2">
         Browse recent flows
       </Link>
     </div>

@@ -38,7 +38,7 @@ export default async function AssetsPage({
 
       {q && assets.length === 0 ? (
         <Empty title={`No asset matches "${search.q}"`}>
-          <Link href="/assets" className="text-accent-ink underline underline-offset-2">
+          <Link prefetch={false} href="/assets" className="text-accent-ink underline underline-offset-2">
             Show all assets
           </Link>
         </Empty>
@@ -70,7 +70,7 @@ export default async function AssetsPage({
                 </td>
                 <td className="text-ink-2">
                   {asset.issuer ? (
-                    <Link href={`/entities/${asset.issuer.slug}`} className="hover:text-accent-ink hover:underline">
+                    <Link prefetch={false} href={`/entities/${asset.issuer.slug}`} className="hover:text-accent-ink hover:underline">
                       {asset.issuer.name}
                     </Link>
                   ) : (
@@ -117,6 +117,7 @@ export default async function AssetsPage({
                 <td>
                   <span className="flex flex-wrap items-center gap-2">
                     <Link
+                      prefetch={false}
                       href={`/assets/${asset.address}`}
                       className="font-medium underline-offset-2 hover:text-accent-ink hover:underline"
                     >
@@ -133,6 +134,7 @@ export default async function AssetsPage({
                 <td className="text-ink-2">{standardLabel(asset.standard)}</td>
                 <td>
                   <Link
+                    prefetch={false}
                     href={`/assets/${asset.address}`}
                     className="font-mono text-xs text-ink-2 hover:text-accent-ink hover:underline"
                     title={asset.address}

@@ -6,7 +6,12 @@ import { api, getNetwork } from "@/lib/api";
 import { count, explorerTx, usd } from "@/lib/format";
 import { orNotFound } from "@/lib/guard";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
+
+// No pages at build time (the API may be asleep); each address renders on first request, then caches.
+export function generateStaticParams() {
+  return [];
+}
 export const metadata = { title: "Address" };
 
 const LINK_TYPES: Record<string, string> = {
@@ -34,7 +39,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
       {token ? (
         <p role="note" className="rounded-sm border border-line-strong px-4 py-3 text-sm leading-relaxed text-ink-2">
           This address is the contract of {token.asset.listed ? "the listed token" : "an unlisted token"}{" "}
-          <Link href={`/assets/${token.asset.address}`} className="font-medium text-accent-ink underline underline-offset-2">
+          <Link prefetch={false} href={`/assets/${token.asset.address}`} className="font-medium text-accent-ink underline underline-offset-2">
             {token.asset.symbol ?? "without a symbol"}
           </Link>
           . Its transfers are on the asset page.
@@ -51,7 +56,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
         {profile.labels.length === 0 ? (
           <Empty title="No attribution on file">
             Tideline has no evidence tying this address to an entity. It appears on the{" "}
-            <Link href="/coverage" className="text-accent-ink underline underline-offset-2">
+            <Link prefetch={false} href="/coverage" className="text-accent-ink underline underline-offset-2">
               coverage worklist
             </Link>{" "}
             if it moves meaningful volume.
@@ -76,7 +81,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             {profile.links.map((link) => (
               <tr key={`${link.address}-${link.link_type}`}>
                 <td>
-                  <Link href={`/address/${link.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
+                  <Link prefetch={false} href={`/address/${link.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
                     {link.address}
                   </Link>
                 </td>
@@ -106,6 +111,7 @@ export default async function AddressPage({ params }: { params: Promise<{ addres
             <FlowTable flows={profile.recent_flows} />
             {profile.flows > profile.recent_flows.length ? (
               <Link
+                prefetch={false}
                 href={`/flows?address=${profile.address}`}
                 className="self-start text-sm text-accent-ink underline underline-offset-2"
               >

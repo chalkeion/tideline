@@ -124,7 +124,7 @@ export default async function OverviewPage({
           title="Assets"
           note={
             overview.asset_count > overview.assets.length ? (
-              <Link href={`/assets?window=${hours}`} className="text-accent-ink underline underline-offset-2">
+              <Link prefetch={false} href={`/assets?window=${hours}`} className="text-accent-ink underline underline-offset-2">
                 All {count(overview.asset_count)} assets
               </Link>
             ) : undefined
@@ -183,7 +183,7 @@ export default async function OverviewPage({
                 {overview.top_entities.map((row) => (
                   <tr key={row.entity.slug}>
                     <td>
-                      <Link href={`/entities/${row.entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
+                      <Link prefetch={false} href={`/entities/${row.entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
                         {row.entity.name}
                       </Link>
                       <p className="text-xs text-ink-3">{categoryLabel(row.entity.category)}</p>
@@ -230,7 +230,7 @@ export default async function OverviewPage({
           <Empty title="No flows above $10K in this window">
             {network.key === "testnet" ? "Arc Testnet traffic is mostly small test transfers. " : ""}
             Lower the threshold on the{" "}
-            <Link href="/flows" className="text-accent-ink underline underline-offset-2">
+            <Link prefetch={false} href="/flows" className="text-accent-ink underline underline-offset-2">
               flows page
             </Link>
             .

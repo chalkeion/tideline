@@ -22,11 +22,11 @@ export function LabelTable({ labels, showEntity = false }: { labels: AddressLabe
         <tr key={`${label.address}-${label.entity.slug}-${label.method}`}>
           <td>
             {showEntity ? (
-              <Link href={`/entities/${label.entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
+              <Link prefetch={false} href={`/entities/${label.entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
                 {label.entity.name}
               </Link>
             ) : (
-              <Link href={`/address/${label.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
+              <Link prefetch={false} href={`/address/${label.address}`} className="font-mono text-xs hover:text-accent-ink hover:underline">
                 {label.address}
               </Link>
             )}

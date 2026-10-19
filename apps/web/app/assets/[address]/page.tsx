@@ -69,7 +69,7 @@ export default async function AssetPage({
   if (asset.issuer) {
     facts.push([
       "Issuer",
-      <Link key="issuer" href={`/entities/${asset.issuer.slug}`} className="text-accent-ink underline underline-offset-2">
+      <Link prefetch={false} key="issuer" href={`/entities/${asset.issuer.slug}`} className="text-accent-ink underline underline-offset-2">
         {asset.issuer.name}
       </Link>,
     ]);
@@ -99,7 +99,7 @@ export default async function AssetPage({
             <>
               {" "}
               The listed {original.symbol} is{" "}
-              <Link href={`/assets/${original.address}`} className="font-mono text-xs text-accent-ink underline underline-offset-2">
+              <Link prefetch={false} href={`/assets/${original.address}`} className="font-mono text-xs text-accent-ink underline underline-offset-2">
                 {original.address}
               </Link>
               .
@@ -174,7 +174,7 @@ export default async function AssetPage({
         title={`Recent ${symbol} flows`}
         note={
           flows.next_cursor ? (
-            <Link href={`/flows?asset=${asset.address}`} className="text-accent-ink underline underline-offset-2">
+            <Link prefetch={false} href={`/flows?asset=${asset.address}`} className="text-accent-ink underline underline-offset-2">
               All flows
             </Link>
           ) : undefined

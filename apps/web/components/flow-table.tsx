@@ -63,6 +63,7 @@ export function FlowTable({ flows }: { flows: Flow[] }) {
           <td className="whitespace-nowrap font-mono text-xs text-ink-2">{utc(flow.block_time)}</td>
           <td>
             <Link
+              prefetch={false}
               href={`/flows/${flow.id}`}
               className="font-medium underline-offset-2 hover:text-accent-ink hover:underline"
             >

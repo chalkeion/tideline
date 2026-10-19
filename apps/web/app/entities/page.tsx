@@ -29,7 +29,7 @@ export default async function EntitiesPage({
 
       {entities.length === 0 ? (
         <Empty title={`No entity matches "${q}"`}>
-          <Link href="/entities" className="text-accent-ink underline underline-offset-2">
+          <Link prefetch={false} href="/entities" className="text-accent-ink underline underline-offset-2">
             Show all entities
           </Link>
         </Empty>
@@ -51,7 +51,7 @@ export default async function EntitiesPage({
             {attributed.map((entity) => (
               <tr key={entity.slug}>
                 <td>
-                  <Link href={`/entities/${entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
+                  <Link prefetch={false} href={`/entities/${entity.slug}`} className="font-medium hover:text-accent-ink hover:underline">
                     {entity.name}
                   </Link>
                 </td>
@@ -75,7 +75,7 @@ export default async function EntitiesPage({
           <ul className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3 lg:grid-cols-5">
             {watchlist.map((entity) => (
               <li key={entity.slug} className="border-t border-line pt-2">
-                <Link href={`/entities/${entity.slug}`} className="text-sm font-medium hover:text-accent-ink hover:underline">
+                <Link prefetch={false} href={`/entities/${entity.slug}`} className="text-sm font-medium hover:text-accent-ink hover:underline">
                   {entity.name}
                 </Link>
                 <p className="text-xs text-ink-3">{categoryLabel(entity.category)}</p>

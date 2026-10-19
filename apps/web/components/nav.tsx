@@ -24,6 +24,7 @@ export function Nav() {
         const current = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
         return (
           <Link
+            prefetch={false}
             key={item.href}
             href={item.href}
             aria-current={current ? "page" : undefined}
