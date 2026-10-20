@@ -3,7 +3,7 @@ import { Empty, PageHeader, Section, Table } from "@/components/ui";
 import { api } from "@/lib/api";
 import { categoryLabel, count, usd } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 export const metadata = { title: "Entities" };
 
 export default async function EntitiesPage({

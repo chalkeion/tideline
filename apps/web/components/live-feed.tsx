@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Flow } from "@tideline/sdk";
 import { kindLabel, tokenAmount, tokenId, usd, utcTime } from "@/lib/format";
 
-const POLL_MS = 10_000;
+const POLL_MS = 60_000;
 const MAX_ROWS = 14;
 
 /** Tails newly attributed flows by polling for ids above the last one seen. */

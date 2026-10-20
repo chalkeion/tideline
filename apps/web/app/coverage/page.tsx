@@ -3,7 +3,7 @@ import { Empty, PageHeader, ScopeNote, Section, Stat, Table, WindowTabs } from "
 import { api, parseWindow } from "@/lib/api";
 import { count, methodLabel, ms, pct, usd, windowLabel } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 export const metadata = { title: "Coverage" };
 
 const VISIBILITY: Record<string, { label: string; meaning: string }> = {

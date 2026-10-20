@@ -6,7 +6,7 @@ import { api, parseWindow } from "@/lib/api";
 import { categoryLabel, count, usd, windowLabel } from "@/lib/format";
 import { orNotFound } from "@/lib/guard";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   return { title: (await params).slug };

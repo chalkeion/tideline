@@ -3,7 +3,7 @@ import { AssetName, Empty, PageHeader, Section, Table, Tag, WindowTabs } from "@
 import { api, parseWindow } from "@/lib/api";
 import { count, priceLabel, shortAddress, standardLabel, tokenAmount, usd, windowLabel } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 export const metadata = { title: "Assets" };
 
 export default async function AssetsPage({

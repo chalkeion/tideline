@@ -6,7 +6,7 @@ import { api, getNetwork } from "@/lib/api";
 import { count, explorerTx, usd } from "@/lib/format";
 import { orNotFound } from "@/lib/guard";
 
-export const revalidate = 30;
+export const revalidate = 300;
 
 // No pages at build time (the API may be asleep); each address renders on first request, then caches.
 export function generateStaticParams() {

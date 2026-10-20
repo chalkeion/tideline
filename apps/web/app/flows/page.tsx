@@ -5,7 +5,7 @@ import { Empty, PageHeader } from "@/components/ui";
 import { api } from "@/lib/api";
 import { KINDS, kindLabel, shortAddress } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 export const metadata = { title: "Flows" };
 
 type Search = Record<string, string | undefined>;

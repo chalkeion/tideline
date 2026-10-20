@@ -6,7 +6,7 @@ import { VolumeChart } from "@/components/volume-chart";
 import { api, getNetwork, parseWindow } from "@/lib/api";
 import { categoryLabel, count, ms, pct, rateLabel, usd, windowLabel } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 300;
 
 export default async function OverviewPage({
   searchParams,

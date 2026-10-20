@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const page = await api.flows({ after, limit: 14 });
     // Viewers polling from the same cursor share one function call per window at the CDN.
     return NextResponse.json(page.flows, {
-      headers: { "Cache-Control": "public, s-maxage=10, stale-while-revalidate=20" },
+      headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" },
     });
   } catch {
     return NextResponse.json({ error: "upstream_unavailable" }, { status: 502 });
